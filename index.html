@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b5c7a">
+<title>Precios de combustible en España</title>
+<meta name="description" content="Precios reales de gasolina y diésel en las gasolineras de España, con cálculo del coste total del viaje.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f2f5f7; --surface:#ffffff; --ink:#14232e; --muted:#5b6b77; --line:#d9e1e7;
+  --accent:#0b5c7a; --best:#17744a; --warn:#a4380f;
+  --sans:'Barlow',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --num:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1a21; --surface:#16252f; --ink:#e6edf1; --muted:#93a4b0; --line:#27394555;
+    --accent:#62b8d9; --best:#52c28a; --warn:#f0906a; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink); font:400 1rem/1.45 var(--sans);
+  padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
+}
+main{max-width:46rem; margin:0 auto; padding:1.25rem 1rem 3rem}
+h1{font:700 2rem/1.1 var(--num); letter-spacing:.01em; margin:.25rem 0 .25rem}
+.sub{color:var(--muted); margin:0 0 1.25rem; font-size:.95rem}
+.controls{display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-bottom:1rem}
+.controls .wide{grid-column:1 / -1}
+label{display:block; font-size:.875rem; color:var(--muted); margin-bottom:.25rem}
+select,input{
+  width:100%; min-height:2.75rem; padding:.5rem .75rem; font:inherit; color:var(--ink);
+  background:var(--surface); border:1px solid var(--line); border-radius:.5rem;
+}
+select:focus-visible,input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+.summary{
+  display:grid; grid-template-columns:repeat(3,1fr); background:var(--surface);
+  border:1px solid var(--line); border-radius:.75rem; margin-bottom:.5rem; overflow:hidden;
+}
+.summary div{padding:.75rem .5rem; text-align:center}
+.summary div+div{border-left:1px solid var(--line)}
+.summary .k{font-size:.8rem; color:var(--muted)}
+.summary .v{font:700 1.9rem/1.1 var(--num); font-variant-numeric:tabular-nums}
+.summary .v small{font:500 .8rem var(--sans); color:var(--muted)}
+.formulas{font-size:.8rem; color:var(--muted); margin:0 0 1rem; padding:0 .25rem}
+.formulas p{margin:.15rem 0; font-variant-numeric:tabular-nums}
+.meta{display:flex; justify-content:space-between; gap:.5rem; align-items:center; font-size:.85rem; color:var(--muted); margin-bottom:.5rem}
+button{
+  font:inherit; min-height:2.5rem; padding:.4rem .9rem; border-radius:.5rem; cursor:pointer;
+  border:1px solid var(--accent); background:transparent; color:var(--accent); font-weight:500;
+}
+button.primary{background:var(--accent); color:var(--bg)}
+ul{list-style:none; margin:0; padding:0}
+li.row{
+  display:grid; grid-template-columns:5.25rem 1fr; gap:.75rem; align-items:start;
+  background:var(--surface); border:1px solid var(--line); border-radius:.6rem;
+  padding:.7rem .85rem; margin-bottom:.5rem;
+}
+.price{font:700 2.1rem/1 var(--num); font-variant-numeric:tabular-nums; padding-top:.1rem}
+.price small{display:block; font:500 .75rem var(--sans); color:var(--muted); margin-top:.15rem}
+.price.best{color:var(--best)}
+.name{font-weight:600}
+.addr,.hours{color:var(--muted); font-size:.9rem}
+.row a{color:var(--accent); font-size:.9rem; font-weight:500}
+.status{padding:1.5rem 1rem; text-align:center; color:var(--muted)}
+.status.err{color:var(--warn); text-align:left}
+.status.err p{margin:.4rem 0}
+.foot{color:var(--muted); font-size:.8rem; margin-top:1.5rem}
+.opts{display:grid; grid-template-columns:1fr 1fr; gap:.75rem}
+.opts[hidden],[hidden]{display:none!important}
+.dist{font-weight:500; font-size:.9rem}
+.costOpts{display:grid; grid-template-columns:1fr 1fr; gap:.75rem; grid-column:1 / -1}
+.costOpts .wide{grid-column:1 / -1}
+label.check{display:flex; gap:.5rem; align-items:center; color:var(--ink); font-size:.9rem; margin:0}
+label.check input{width:1.2rem; min-height:1.2rem; height:1.2rem; accent-color:var(--accent)}
+.cost{font-size:.9rem; margin-top:.2rem}
+.cost strong{font-variant-numeric:tabular-nums}
+.save{color:var(--best); font-weight:600; font-size:.9rem}
+.lose{color:var(--warn); font-weight:500; font-size:.9rem}
+.advice{background:var(--surface); border:1px solid var(--line); border-left:4px solid var(--best); border-radius:.6rem; padding:.7rem .85rem; margin:0 0 1rem; font-size:.95rem}
+.advice p{margin:.2rem 0}
+details{margin-top:.15rem}
+details summary{cursor:pointer; color:var(--accent); font-size:.85rem}
+details p{margin:.3rem 0; font-size:.8rem; color:var(--muted); font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.warn{border-left-color:var(--warn)}
+#placeBox .r{display:flex; gap:.5rem}
+.links{display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.4rem}
+.links a{display:inline-flex; align-items:center; min-height:2.75rem; padding:0 .8rem; border:1px solid var(--accent); border-radius:.5rem; text-decoration:none}
+@media (max-width:26rem){.controls{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Precios de combustible en España</h1>
+  <p class="sub">Datos oficiales de las gasolineras, publicados por el Ministerio para la Transición Ecológica.</p>
+
+  <div class="controls">
+    <div class="wide">
+      <label for="fuel">Combustible</label>
+      <select id="fuel"></select>
+    </div>
+    <label class="check wide"><input id="restr" type="checkbox"> Incluir estaciones de venta restringida (cooperativas, flotas)</label>
+    <div class="wide">
+      <button id="near" class="primary" type="button" style="width:100%">Buscar cerca de mí</button>
+    </div>
+    <div class="wide" id="placeBox">
+      <label for="place">…o escribe un lugar de salida</label>
+      <div class="r"><input id="place" type="search" placeholder="Pueblo, calle o código postal" autocomplete="off"><button id="go" type="button">Buscar</button></div>
+    </div>
+    <div class="wide opts" id="nearOpts" hidden><div class="wide addr" id="orig"></div>
+      <div>
+        <label for="rad">Radio</label>
+        <select id="rad">
+          <option value="5">5 km</option>
+          <option value="10">10 km</option>
+          <option value="25">25 km</option>
+          <option value="50">50 km</option>
+          <option value="100" selected>100 km</option>
+        </select>
+      </div>
+      <div>
+        <label for="sort">Ordenar por</label>
+        <select id="sort">
+          <option value="price">Precio</option>
+          <option value="dist">Distancia</option>
+          <option value="cost">Coste total (incluye el viaje)</option>
+        </select>
+      </div>
+      <div class="wide costOpts" id="costOpts" hidden>
+        <div>
+          <label for="cons">Consumo del coche (L/100 km)</label>
+          <input id="cons" type="number" inputmode="decimal" min="1" max="40" step="0.1" value="6.5">
+        </div>
+        <div>
+          <label for="liters">Litros a repostar</label>
+          <input id="liters" type="number" inputmode="decimal" min="1" max="200" step="1" value="40">
+        </div>
+        <label class="check wide"><input id="round" type="checkbox" checked> Contar ida y vuelta (volver al punto de partida)</label>
+      </div>
+    </div>
+    <div id="provBox">
+      <label for="prov">Provincia</label>
+      <select id="prov"></select>
+    </div>
+    <div id="muniBox">
+      <label for="muni">Municipio</label>
+      <select id="muni"><option value="">Todos</option></select>
+    </div>
+    <div class="wide">
+      <label for="q">Buscar por marca o dirección</label>
+      <input id="q" type="search" placeholder="Cepsa, Repsol, calle…" autocomplete="off">
+    </div>
+  </div>
+
+  <div id="summary" hidden>
+    <div class="summary">
+      <div><div class="k">Más barata</div><div class="v" id="sMin">–</div></div>
+      <div><div class="k">Media</div><div class="v" id="sAvg">–</div></div>
+      <div><div class="k">Más cara</div><div class="v" id="sMax">–</div></div>
+    </div>
+    <div class="formulas" id="formulas"></div>
+  </div>
+  <div id="advice" class="advice" hidden></div>
+
+  <div id="warn" class="advice warn" hidden></div>
+
+  <div class="meta"><span id="count"></span><span id="fecha"></span></div>
+  <div id="status" class="status" role="status" aria-live="polite">Cargando precios…</div>
+  <ul id="list"></ul>
+  <div style="text-align:center"><button id="more" hidden>Mostrar más</button></div>
+
+  <p class="foot">Precios en euros por litro (€/L), tal como los comunican las estaciones. Pueden cambiar varias veces al día.</p>
+</main>
+
+<script>
+const BASE = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/'; // con proxy: 'https://TU-WORKER.workers.dev/'
+const FUELS = [
+  ['Precio Gasolina 95 E5','Gasolina 95 (E5)'],['Precio Gasolina 95 E10','Gasolina 95 (E10)'],['Precio Gasolina 95 E5 Premium','Gasolina 95 (E5 premium)'],
+  ['Precio Gasolina 98 E5','Gasolina 98 (E5)'],['Precio Gasolina 98 E10','Gasolina 98 (E10)'],['Precio Gasoleo A','Diésel A'],
+  ['Precio Gasoleo Premium','Diésel premium'],['Precio Gasoleo B','Gasóleo B (agrícola)'],['Precio Gases licuados del petróleo','GLP (autogás)'],
+  ['Precio Gas Natural Comprimido','Gas natural comprimido'],['Precio Gas Natural Licuado','Gas natural licuado'],['Precio Hidrogeno','Hidrógeno']
+];
+// [id, nombre, lat, lon] — centro aproximado de cada provincia (solo para decidir qué provincias descargar)
+const PROVS = [
+  ['01','Álava/Araba',42.85,-2.67],['02','Albacete',38.99,-1.86],['03','Alicante',38.35,-0.49],['04','Almería',36.84,-2.46],['05','Ávila',40.66,-4.70],
+  ['06','Badajoz',38.88,-6.97],['07','Illes Balears',39.6,2.9],['08','Barcelona',41.5,2.0],['09','Burgos',42.34,-3.70],['10','Cáceres',39.47,-6.37],
+  ['11','Cádiz',36.53,-5.90],['12','Castellón',40.2,-0.05],['13','Ciudad Real',38.99,-3.93],['14','Córdoba',37.89,-4.78],['15','A Coruña',43.1,-8.4],
+  ['16','Cuenca',40.07,-2.14],['17','Girona',42.0,2.8],['18','Granada',37.18,-3.6],['19','Guadalajara',40.63,-3.16],['20','Gipuzkoa',43.2,-2.2],
+  ['21','Huelva',37.4,-6.9],['22','Huesca',42.14,-0.41],['23','Jaén',37.77,-3.79],['24','León',42.6,-5.57],['25','Lleida',41.6,1.0],
+  ['26','La Rioja',42.3,-2.5],['27','Lugo',43.0,-7.55],['28','Madrid',40.42,-3.7],['29','Málaga',36.72,-4.42],['30','Murcia',38.0,-1.5],
+  ['31','Navarra',42.7,-1.65],['32','Ourense',42.3,-7.86],['33','Asturias',43.36,-5.85],['34','Palencia',42.0,-4.53],['35','Las Palmas',28.3,-14.9],
+  ['36','Pontevedra',42.43,-8.64],['37','Salamanca',40.97,-5.66],['38','Santa Cruz de Tenerife',28.4,-16.9],['39','Cantabria',43.18,-3.99],['40','Segovia',40.95,-4.12],
+  ['41','Sevilla',37.39,-5.98],['42','Soria',41.76,-2.47],['43','Tarragona',41.12,1.25],['44','Teruel',40.35,-1.1],['45','Toledo',39.86,-4.02],
+  ['46','Valencia',39.47,-0.38],['47','Valladolid',41.65,-4.72],['48','Bizkaia',43.26,-2.93],['49','Zamora',41.5,-5.75],['50','Zaragoza',41.65,-0.88],
+  ['51','Ceuta',35.89,-5.32],['52','Melilla',35.29,-2.94]
+];
+const PAGE = 30, MARGIN = 90, TTL = 36e5;
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { return localStorage.getItem(k) ?? d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+};
+let stations = [], fecha = '', shown = PAGE, mode = 'prov', pos = null, origin = '', reqId = 0, ctl = null;
+const ROUTER = 'https://router.project-osrm.org/table/v1/driving/', ROUTE_BATCH = 90;
+let roads = new Map(), routing = false, routeFails = 0;
+const cache = new Map();
+
+const num = s => { const n = parseFloat(String(s || '').replace(',', '.')); return isFinite(n) && n > 0 ? n : null; };
+const eur = n => n.toFixed(3).replace('.', ',');
+const money = v => v.toFixed(2).replace('.', ',') + ' €';
+const km1 = v => v.toFixed(1).replace('.', ',');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const cap = s => String(s || '').toLowerCase().replace(/(^|[\s\-\/(])(\S)/g, (m, a, b) => a + b.toUpperCase());
+const deb = (f, ms = 200) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; };
+const hav = (la1, lo1, la2, lo2) => {
+  const r = Math.PI / 180, dphi = la2 - la1, dlam = lo2 - lo1;
+  const a = Math.sin(dphi * r / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dlam * r / 2) ** 2;
+  return { a, dphi, dlam, d: 2 * 6371 * Math.asin(Math.sqrt(a)) };
+};
+
+function init(){
+  $('fuel').innerHTML = FUELS.map(f => `<option value="${esc(f[0])}">${esc(f[1])}</option>`).join('');
+  $('prov').innerHTML = PROVS.map(p => `<option value="${p[0]}">${esc(p[1])}</option>`).join('');
+  $('fuel').value = store.get('fuel', FUELS[0][0]);
+  $('prov').value = store.get('prov', '38');
+  if (!$('fuel').value) $('fuel').selectedIndex = 0;
+  if (!$('prov').value) $('prov').value = '38';
+  $('restr').checked = store.get('restr', '0') === '1';
+
+  $('fuel').addEventListener('change', () => { store.set('fuel', $('fuel').value); shown = PAGE; render(); });
+  $('prov').addEventListener('change', () => { store.set('prov', $('prov').value); store.set('muni', ''); loadProvince(); });
+  $('muni').addEventListener('change', () => { store.set('muni', $('muni').value); shown = PAGE; render(); });
+  $('restr').addEventListener('change', () => { store.set('restr', $('restr').checked ? '1' : '0'); shown = PAGE; render(); });
+  $('q').addEventListener('input', deb(() => { shown = PAGE; render(); }));
+  $('more').addEventListener('click', () => { shown += PAGE; render(); });
+  $('rad').value = store.get('rad', '100'); if (!$('rad').value) $('rad').value = '100';
+  $('sort').value = store.get('sort', 'price'); if (!$('sort').value) $('sort').value = 'price';
+  $('rad').addEventListener('change', () => { store.set('rad', $('rad').value); shown = PAGE; loadNear(); });
+  $('sort').addEventListener('change', () => { store.set('sort', $('sort').value); shown = PAGE; applyMode(); render(); });
+  $('near').addEventListener('click', toggleNear);
+  $('go').addEventListener('click', geocode);
+  $('place').addEventListener('keydown', e => { if (e.key === 'Enter') geocode(); });
+  $('cons').value = store.get('cons', '6.5'); $('liters').value = store.get('liters', '40');
+  $('round').checked = store.get('round', '1') === '1';
+  const rd = deb(() => render());
+  const costChange = () => { store.set('cons', $('cons').value); store.set('liters', $('liters').value); store.set('round', $('round').checked ? '1' : '0'); rd(); };
+  $('cons').addEventListener('input', costChange); $('liters').addEventListener('input', costChange); $('round').addEventListener('change', costChange);
+  loadProvince();
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+function applyMode(){
+  const near = mode === 'near';
+  $('provBox').hidden = near; $('muniBox').hidden = near; $('nearOpts').hidden = !near;
+  $('near').textContent = near ? 'Volver a buscar por provincia' : 'Buscar cerca de mí';
+  $('near').className = near ? '' : 'primary';
+  $('costOpts').hidden = !(near && $('sort').value === 'cost');
+  $('orig').textContent = near ? (origin ? 'Desde: ' + origin : 'Desde tu ubicación actual') : '';
+  if (!near){ $('advice').hidden = true; $('warn').hidden = true; }
+}
+
+function startNear(p){ pos = p; roads = new Map(); routeFails = 0; mode = 'near'; applyMode(); loadNear(); }
+
+function toggleNear(){
+  if (mode === 'near'){ mode = 'prov'; applyMode(); loadProvince(); return; }
+  if (!navigator.geolocation){ setStatus('<p>Este navegador no permite obtener la ubicación. Usa la búsqueda por provincia o escribe un lugar de salida.</p>', true); return; }
+  setStatus('Obteniendo tu ubicación…');
+  navigator.geolocation.getCurrentPosition(p => {
+    origin = ''; startNear({ lat: p.coords.latitude, lon: p.coords.longitude });
+  }, err => {
+    setStatus(err && err.code === 1
+      ? '<p><strong>No tengo permiso para usar tu ubicación.</strong></p><p>Actívala para esta página en los ajustes del navegador, o escribe un lugar de salida.</p>'
+      : '<p><strong>No se pudo obtener tu ubicación.</strong></p><p>Comprueba que el GPS está activado o escribe un lugar de salida.</p>', true);
+  }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+}
+
+async function geocode(){
+  const q = $('place').value.trim(); if (!q) return;
+  setStatus('Buscando «' + esc(q) + '»…');
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=es&q=' + encodeURIComponent(q));
+    const d = await r.json(); if (!d[0]) throw new Error('sin resultados');
+    origin = d[0].display_name.split(',').slice(0, 2).join(',').trim();
+    startNear({ lat: +d[0].lat, lon: +d[0].lon });
+  } catch (e) {
+    setStatus('<p><strong>No se encontró ese lugar.</strong></p><p>Prueba con el pueblo y la provincia (por ejemplo «Adeje, Tenerife»).</p>', true);
+  }
+}
+
+async function getProv(id, signal){
+  const hit = cache.get(id); if (hit && Date.now() - hit.t < TTL) return hit;
+  let o = null; try { o = JSON.parse(sessionStorage.getItem('p' + id)); } catch(e){}
+  if (o && Date.now() - o.t < TTL){ cache.set(id, o); return o; }
+  const r = await fetch(BASE + 'EstacionesTerrestres/FiltroProvincia/' + id, { headers: { 'Accept': 'application/json' }, signal });
+  if (!r.ok) throw new Error('El servidor respondió con el código ' + r.status);
+  const d = await r.json();
+  o = { t: Date.now(), list: d.ListaEESSPrecio || [], fecha: d.Fecha || '' };
+  cache.set(id, o); try { sessionStorage.setItem('p' + id, JSON.stringify(o)); } catch(e){}
+  return o;
+}
+
+// Descarga una o varias provincias. Un contador y un AbortController descartan respuestas obsoletas.
+async function load(ids, near){
+  const tok = ++reqId; if (ctl) ctl.abort(); ctl = new AbortController();
+  $('list').innerHTML = ''; $('summary').hidden = true; $('advice').hidden = true; $('more').hidden = true;
+  $('count').textContent = ''; $('fecha').textContent = '';
+  setStatus(near ? 'Cargando ' + ids.length + (ids.length === 1 ? ' provincia' : ' provincias') + ' dentro del radio…' : 'Cargando precios…');
+  try {
+    const rs = await Promise.all(ids.map(i => getProv(i, ctl.signal)));
+    if (tok !== reqId) return;
+    stations = rs.flatMap(r => r.list); fecha = rs[0] ? rs[0].fecha : '';
+    if (!near) fillMunicipalities();
+    updateFuels(); shown = PAGE; render();
+  } catch (e) {
+    if (tok !== reqId || e.name === 'AbortError') return;
+    stations = [];
+    setStatus(
+      '<p><strong>No se pudieron cargar los precios.</strong></p>' +
+      '<p>Comprueba tu conexión e inténtalo de nuevo. Si el fallo se repite, es posible que el servidor del Ministerio no acepte consultas desde esta web.</p>' +
+      '<p><small>Detalle: ' + esc(e.message) + '</small></p>' +
+      '<p><button class="primary" id="retry">Reintentar</button></p>', true);
+    const b = $('retry'); if (b) b.addEventListener('click', near ? loadNear : loadProvince);
+  }
+}
+const loadProvince = () => load([$('prov').value], false);
+function loadNear(){
+  if (!pos) return;
+  const rad = parseFloat($('rad').value) || 100;
+  const ds = PROVS.map(p => ({ id: p[0], d: hav(pos.lat, pos.lon, p[2], p[3]).d }));
+  let ids = ds.filter(x => x.d <= rad + MARGIN).map(x => x.id);
+  if (!ids.length) ids = [ds.sort((a, b) => a.d - b.d)[0].id];
+  load(ids, true);
+}
+
+function updateFuels(){
+  const o = [...$('fuel').options];
+  o.forEach(op => { op.hidden = op.disabled = !stations.some(s => num(s[op.value])); });
+  if ($('fuel').selectedOptions[0] && $('fuel').selectedOptions[0].disabled){ const f = o.find(x => !x.disabled); if (f) $('fuel').value = f.value; }
+}
+
+// Distancia (trigonometría una sola vez por estación y origen) + distancia por carretera si ya se conoce
+function geo(s){
+  if (s._bp !== pos){
+    s._bp = pos;
+    const lat = parseFloat(String(s['Latitud'] || '').replace(',', '.')), lon = parseFloat(String(s['Longitud (WGS84)'] || '').replace(',', '.'));
+    s._b = isFinite(lat) && isFinite(lon) ? { ...hav(pos.lat, pos.lon, lat, lon), phi1: pos.lat, phi2: lat, lat, lon } : null;
+  }
+  const b = s._b; if (!b) return null;
+  const road = roads.get(s['IDEESS']), ok = road && !road.fail, approx = !ok && routeFails >= 3;
+  return { ...b, road: ok ? road : null, km: ok ? road.km : approx ? b.d * 1.3 : b.d, approx, pending: !road };
+}
+
+async function fetchRoads(list){
+  if (routing || !pos || !list.length || routeFails >= 3) return;
+  routing = true;
+  const batch = list.slice(0, ROUTE_BATCH);
+  const coords = [pos.lon.toFixed(6) + ',' + pos.lat.toFixed(6)]
+    .concat(batch.map(x => x.g.lon.toFixed(6) + ',' + x.g.lat.toFixed(6))).join(';');
+  try {
+    const r = await fetch(ROUTER + coords + '?sources=0&annotations=distance,duration');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.code !== 'Ok') throw new Error(d.code);
+    batch.forEach((x, i) => {
+      const m = d.distances?.[0]?.[i + 1], sec = d.durations?.[0]?.[i + 1];
+      roads.set(x.s['IDEESS'], m == null ? { fail: true } : { km: m / 1000, min: sec / 60 });
+    });
+    routeFails = 0;
+  } catch (e) {
+    routeFails++;
+    if (routeFails >= 3) batch.forEach(x => roads.set(x.s['IDEESS'], { fail: true }));
+  } finally {
+    routing = false;
+  }
+  if (mode === 'near') {
+    if (routeFails && routeFails < 3) setTimeout(() => mode === 'near' && render(), 2000);
+    else render();
+  }
+}
+
+function distHtml(g){
+  const f = (x, k = 4) => x.toFixed(k).replace('.', ',');
+  const head = g.road
+    ? `<div class="dist">A ${f(g.road.km, 1)} km por carretera · ≈ ${Math.max(1, Math.round(g.road.min))} min en coche</div><div class="addr">${f(g.d, 1)} km en línea recta</div>`
+    : `<div class="dist">A ${f(g.d, 1)} km en línea recta${g.approx ? ` (≈ ${f(g.km, 1)} km por carretera, estimado)` : g.pending && routeFails < 3 ? ' <span class="addr">(calculando ruta…)</span>' : ''}</div>`;
+  return head +
+    `<details><summary>Ver cálculo</summary>` +
+    `<p>a = sin²(Δφ/2) + cos φ₁ · cos φ₂ · sin²(Δλ/2) = sin²(${f(g.dphi)}°/2) + cos(${f(g.phi1)}°) · cos(${f(g.phi2)}°) · sin²(${f(g.dlam)}°/2) = ${f(g.a, 6)}</p>` +
+    `<p>d = 2 · R · asin(√a) = 2 · 6371 · asin(√${f(g.a, 6)}) = ${f(g.d, 1)} km</p>` +
+    (g.road ? `<p>La distancia por carretera es la ruta en coche más corta calculada con OpenStreetMap (OSRM).</p>` : '') +
+    (g.approx ? `<p>Estimación por carretera = línea recta × 1,3 = ${f(g.d, 1)} × 1,3 = ${f(g.km, 1)} km</p>` : '') + `</details>`;
+}
+
+function fillMunicipalities(){
+  const names = [...new Set(stations.map(s => s['Municipio']).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  $('muni').innerHTML = '<option value="">Todos</option>' + names.map(n => `<option value="${esc(n)}">${esc(cap(n))}</option>`).join('');
+  const saved = store.get('muni', '');
+  $('muni').value = names.includes(saved) ? saved : '';
+}
+
+function setStatus(html, isErr){
+  const el = $('status');
+  el.hidden = !html;
+  el.className = 'status' + (isErr ? ' err' : '');
+  el.innerHTML = html || '';
+}
+
+function render(){
+  if (!stations.length && $('status').classList.contains('err')) return;
+  const fuel = $('fuel').value, q = norm($('q').value.trim());
+  const near = mode === 'near' && !!pos, rad = parseFloat($('rad').value);
+  const muni = near ? '' : $('muni').value, inclR = $('restr').checked;
+  const byDist = near && $('sort').value === 'dist', byCost = near && $('sort').value === 'cost';
+  const cons = Math.min(40, Math.max(0, num($('cons').value) || 0));
+  const liters = Math.min(200, Math.max(0, num($('liters').value) || 0));
+  const trips = $('round').checked ? 2 : 1;
+  let rows = stations
+    .filter(s => inclR || s['Tipo Venta'] !== 'R')
+    .map(s => ({ s, p: num(s[fuel]), g: near ? geo(s) : null }))
+    .filter(x => x.p !== null)
+    .filter(x => !near || (x.g && x.g.km <= rad))
+    .filter(x => !muni || x.s['Municipio'] === muni)
+    .filter(x => !q || (x.s._t = x.s._t || norm([x.s['Rótulo'], x.s['Dirección'], x.s['Localidad']].join(' '))).includes(q));
+
+  $('fecha').textContent = fecha ? 'Actualizado: ' + fecha.replace(/:\d\d$/, '') : '';
+  $('warn').hidden = !(near && routeFails >= 3);
+  if (!$('warn').hidden) $('warn').innerHTML = '<p>No se pudieron calcular las rutas por carretera. Las distancias son una <strong>estimación</strong>: línea recta × 1,3.</p>';
+  if (!rows.length){
+    $('summary').hidden = true; $('advice').hidden = true; $('list').innerHTML = ''; $('more').hidden = true; $('count').textContent = '';
+    setStatus('Ninguna gasolinera de esta zona vende este combustible con los filtros actuales. Prueba con otro combustible, otro municipio o borra la búsqueda.');
+    return;
+  }
+  setStatus('');
+
+  const n = rows.length, ps = rows.map(x => x.p), min = Math.min(...ps), max = Math.max(...ps);
+  const sum = ps.reduce((t, x) => t + x, 0), avg = sum / n;
+  // Coste total: ida al precio medio de la zona (combustible que ya llevas); vuelta y repostaje al precio de la gasolinera
+  const costOf = x => {
+    const L = x.g.km * cons / 100, ida = L * avg, vuelta = trips === 2 ? L * x.p : 0, fill = liters * x.p;
+    return { L, ida, vuelta, fill, trip: ida + vuelta, total: fill + ida + vuelta };
+  };
+  if (byCost) rows.forEach(x => x.c = costOf(x));
+  rows.sort(byDist ? (a, b) => a.g.km - b.g.km : byCost ? (a, b) => a.c.total - b.c.total : (a, b) => a.p - b.p);
+  let nearest = null;
+  if (byCost) for (const x of rows) if (!nearest || x.g.km < nearest.g.km) nearest = x;
+
+  let want = [];
+  if (near){
+    want = rows.slice(0, byDist || byCost ? shown + PAGE : shown).filter(x => x.g.pending);
+    if (byCost){
+      const close = rows.slice().sort((a, b) => a.g.km - b.g.km).slice(0, 10).filter(x => x.g.pending && !want.includes(x));
+      want = close.concat(want);
+    }
+    if (want.length) fetchRoads(want);
+  }
+  const refining = near && (byDist || byCost) && routeFails < 3 && (routing || want.length > 0);
+
+  $('sMin').innerHTML = eur(min) + ' <small>€/L</small>';
+  $('sAvg').innerHTML = eur(avg) + ' <small>€/L</small>';
+  $('sMax').innerHTML = eur(max) + ' <small>€/L</small>';
+  $('formulas').innerHTML =
+    `<p>Media = Σ precios ÷ n = ${sum.toFixed(3).replace('.', ',')} ÷ ${n} = ${eur(avg)} €/L</p>` +
+    `<p>Diferencia = más cara − más barata = ${eur(max)} − ${eur(min)} = ${eur(max - min)} €/L</p>`;
+  $('summary').hidden = false;
+  $('count').textContent = n + (n === 1 ? ' gasolinera' : ' gasolineras') + (near ? ' en ' + rad + ' km' : '') +
+    (byDist ? ', de más cerca a más lejos' : byCost ? ', por coste total (repostaje + viaje)' : ', de más barata a más cara') + (refining ? ' · afinando orden…' : '');
+
+  if (byCost){
+    const best = rows[0], diff = nearest.c.total - best.c.total;
+    const nm = x => esc(cap(x.s['Rótulo']) || 'Sin rótulo');
+    $('advice').innerHTML = best === nearest || diff < 0.005
+      ? `<p><strong>Lo más rentable es la más cercana:</strong> ${nm(nearest)}, a ${km1(nearest.g.km)} km, por ${money(nearest.c.total)} en total.</p>` +
+        `<p class="addr">Ninguna gasolinera más lejana compensa el combustible gastado en llegar.</p>`
+      : `<p><strong>Compensa ir a ${nm(best)}</strong> (${km1(best.g.km)} km): ahorras <span class="save">${money(diff)}</span> frente a la más cercana, ${nm(nearest)} (${km1(nearest.g.km)} km), incluso contando el viaje.</p>` +
+        `<p class="addr">Cálculo con ${String(cons).replace('.', ',')} L/100 km, ${String(liters).replace('.', ',')} L a repostar y ${trips === 2 ? 'ida y vuelta' : 'solo ida'}. Ida al precio medio de la zona (${eur(avg)} €/L)${trips === 2 ? '; vuelta al precio de la gasolinera' : ''}.</p>`;
+    $('advice').hidden = false;
+  } else $('advice').hidden = true;
+
+  const costHtml = x => {
+    const c = x.c, d = nearest.c.total - c.total, L = c.L.toFixed(3).replace('.', ','), cn = String(cons).replace('.', ','), lt = String(liters).replace('.', ',');
+    const cmp = x === nearest ? '<div class="addr">Es la más cercana</div>'
+      : d >= 0.005 ? `<div class="save">Ahorras ${money(d)} frente a la más cercana</div>`
+      : d <= -0.005 ? `<div class="lose">Cuesta ${money(-d)} más que ir a la más cercana</div>`
+      : '<div class="addr">Cuesta lo mismo que la más cercana</div>';
+    return `<div class="cost">Coste total: <strong>${money(c.total)}</strong> <span class="addr">= repostaje ${money(c.fill)} + viaje ${money(c.trip)}</span></div>` + cmp +
+      `<details><summary>Ver cálculo del coste</summary>` +
+      `<p>Litros por tramo = km × consumo ÷ 100 = ${km1(x.g.km)} × ${cn} ÷ 100 = ${L} L</p>` +
+      `<p>Ida = litros × precio medio de la zona = ${L} × ${eur(avg)} = ${money(c.ida)}</p>` +
+      (trips === 2 ? `<p>Vuelta = litros × precio de la gasolinera = ${L} × ${eur(x.p)} = ${money(c.vuelta)}</p>` : '') +
+      `<p>Repostaje = litros × precio = ${lt} × ${eur(x.p)} = ${money(c.fill)}</p>` +
+      `<p>Total = repostaje + ida${trips === 2 ? ' + vuelta' : ''} = ${money(c.fill)} + ${money(c.ida)}${trips === 2 ? ' + ' + money(c.vuelta) : ''} = ${money(c.total)}</p></details>`;
+  };
+
+  $('list').innerHTML = rows.slice(0, shown).map(x => { const { s, p, g } = x;
+    const lat = String(s['Latitud'] || '').replace(',', '.'), lon = String(s['Longitud (WGS84)'] || '').replace(',', '.');
+    const dir = g ? `https://www.google.com/maps/dir/?api=1&origin=${pos.lat},${pos.lon}&destination=${g.lat},${g.lon}&travelmode=driving` : '';
+    const links = (g ? `<a href="${dir}" target="_blank" rel="noopener">Cómo llegar</a>` : '') +
+      (lat && lon ? `<a href="https://www.google.com/maps?q=${encodeURIComponent(lat + ',' + lon)}" target="_blank" rel="noopener">Ver en el mapa</a>` : '');
+    const addr = [cap(s['Dirección']), cap(s['Localidad'] || s['Municipio'])].filter(Boolean).join(', ');
+    return `<li class="row">
+      <div class="price${p === min ? ' best' : ''}">${eur(p)}<small>€/L</small></div>
+      <div>
+        <div class="name">${esc(cap(s['Rótulo']) || 'Sin rótulo')}${s['Tipo Venta'] === 'R' ? ' <span class="lose">· venta restringida</span>' : ''}</div>
+        <div class="addr">${esc(addr)}</div>
+        <div class="hours">${esc(s['Horario'] || '')}</div>
+        ${g ? distHtml(g) : ''}
+        ${byCost ? costHtml(x) : ''}
+        <div class="links">${links}</div>
+      </div></li>`;
+  }).join('');
+  $('more').hidden = rows.length <= shown;
+}
+
+init();
+</script>
+</body>
+</html>
