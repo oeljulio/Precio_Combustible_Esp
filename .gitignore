@@ -4,3 +4,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.tmp
+.gradle/
+build/
+app/build/
+local.properties
+*.jks
+*.keystore

@@ -1,90 +1,78 @@
-# ⛽ Precios de Combustible en España (PWA)
+# PreCoGas — Precio Combustible España
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-brightgreen?style=flat-square&logo=github)](https://oeljulio.github.io/Precio_Combustible_Esp/)
-[![PWA Ready](https://img.shields.io/badge/PWA-Installable-blue?style=flat-square&logo=pwa)](https://oeljulio.github.io/Precio_Combustible_Esp/)
-[![API](https://img.shields.io/badge/Data-MITECO%20REST%20API-orange?style=flat-square)](https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+**Encuentra. Compara. Ahorra.**
 
-> Aplicación web progresiva (PWA) rápida, ligera y sin publicidad para consultar los precios oficiales de gasolineras en España en tiempo real y calcular el **coste real del viaje** (precio del combustible + gasto de desvío por distancia).
+Aplicación Android nativa para consultar los precios oficiales de combustibles en España mediante los datos de MITECO.
 
-👉 **[Abrir Aplicación en Vivo](https://oeljulio.github.io/Precio_Combustible_Esp/)**
+[![Android](https://img.shields.io/badge/Plataforma-Android-green?logo=android)](https://www.android.com/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Compose-purple?logo=kotlin)](https://kotlinlang.org/)
+[![Licencia MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
+## Estado del proyecto
 
-## 💡 El Problema que Resuelve
+PreCoGas está evolucionando desde una antigua PWA hacia una aplicación Android nativa independiente.
 
-A menudo la gasolinera más barata no es la más rentable si está a varios kilómetros de distancia. **Precio Combustible España** resuelve esto calculando:
+### Funcionalidades implementadas
 
-$$\text{Coste Total} = (\text{Litros a repostar} \times \text{Precio/L}) + (\text{Distancia ida y vuelta} \times \frac{\text{Consumo}}{100} \times \text{Precio/L})$$
+- Consulta de estaciones y precios mediante la API oficial MITECO.
+- Selección entre las 52 provincias españolas.
+- Actualización al abrir la aplicación y actualización manual.
+- Almacenamiento local mediante Room.
+- Conservación de los últimos datos cuando falla la conexión.
+- Catálogo de 23 combustibles; cada estación muestra solo los precios disponibles.
+- Temas claro, oscuro y AMOLED.
+- Preferencias persistentes mediante DataStore.
 
-Así sabes exactamente si te compensa desplazarte a otra estación o repostar en la más cercana.
+- Geolocalización del dispositivo con permisos de ubicación aproximada o precisa.
+- Cálculo de distancias por carretera mediante OSRM y estimaciones alternativas cuando no hay respuesta.
+- Filtros por radio y provincia.
+- Selector de combustible según los productos disponibles en cada provincia.
+- Cálculo configurable del coste de repostaje y del desplazamiento de ida o ida y vuelta, con unidades compatibles para productos por litro o kilogramo.
 
----
+## Tecnologías
 
-## 🚀 Características Principales
+- Kotlin y Jetpack Compose.
+- Material 3.
+- AndroidX ViewModel.
+- Room y DataStore.
+- KSP.
+- API REST de MITECO.
+- GitHub Actions.
 
-* 📡 **Datos Oficiales en Tiempo Real:** Conectada a la API pública del **Ministerio para la Transición Ecológica y el Reto Demográfico (MITECO)**.
-* 🚗 **Cálculo de Rutas y Desvío Real:** Integración con **OSRM (Open Source Routing Machine)** para medir la distancia real por carretera (no en línea recta).
-* 📍 **Búsqueda Flexible:**
-  * Búsqueda por **geolocalización GPS** o introduciendo un pueblo/ciudad de salida (**Nominatim / OpenStreetMap**).
-  * Navegación por **Provincias** y **Municipios** de toda España.
-  * Ajuste de **radio de búsqueda** (de 5 km a 100 km).
-* ⛽ **Múltiples Carburantes:** Gasolina 95 E5, Gasolina 98 E5, Gasóleo A habitual, Gasóleo Premium, Gasóleo B, GLP, GNC, GNL e Hidrógeno.
-* 📱 **PWA Instalable:** Funciona como aplicación nativa en Android, iOS, Windows y macOS.
-* 📴 **Soporte Offline (Service Worker):** Permite cargar la interfaz y consultar los últimos datos en caché sin conexión activa.
-* 🌗 **Modo Oscuro / Claro:** Detección automática según las preferencias del sistema.
-* ⚡ **Ultra Rápida y Privada:** Construida en **Vanilla JavaScript** puro, sin frameworks pesados ni rastreadores de terceros. Tu ubicación nunca sale de tu dispositivo.
+## API de precios
 
----
+Servicio oficial:
 
-## 🧱 Arquitectura y Servicios Utilizados
+https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/
 
-| Servicio / API | Proveedor | Función en la App |
-| :--- | :--- | :--- |
-| **API Precios Carburantes** | [MITECO Gobierno de España](https://sedeaplicaciones.minetur.gob.es/) | Datos oficiales actualizados de estaciones de servicio y precios. |
-| **OSRM Routing** | [Project OSRM](https://project-osrm.org/) | Matriz de distancias por carretera en tiempo real. |
-| **Nominatim Geocoding** | [OpenStreetMap](https://nominatim.openstreetmap.org/) | Búsqueda y geocodificación de nombres de ciudades/pueblos. |
-| **Service Worker (`sw.js`)** | Estándar W3C / Cache API | Caché de recursos estáticos y respaldo para uso sin conexión. |
-| **Cloudflare Worker (`worker.js`)** | Cloudflare *(Opcional)* | Proxy de caché con compresión y cabeceras CORS para alta concurrencia. |
+Los datos se validan antes de almacenarse. Si falla una actualización, se conservan los datos locales anteriores.
 
----
+## Compilación y pruebas
 
-## 📂 Estructura del Proyecto
+Las compilaciones Android completas se realizan mediante GitHub Actions, no localmente en Andronix.
 
-```
-Precio_Combustible_Esp/
-├── index.html              # Interfaz completa, lógica reactiva y estilos CSS
-├── manifest.webmanifest    # Manifiesto PWA para instalación en móviles y PC
-├── sw.js                   # Service Worker para caché y funcionamiento offline
-├── worker.js               # Proxy opcional para Cloudflare Workers con caché
-├── icon.svg                # Icono vectorial escalable de la app
-├── icon-192.png            # Icono PWA resolución estándar
-├── icon-512.png            # Icono PWA alta resolución
-├── .gitignore              # Archivos ignorados por Git
-├── LICENSE                 # Licencia de código abierto MIT
-└── README.md               # Documentación del proyecto
-```
+El workflow está configurado para ejecutar los tests instrumentados de Room, compilar el APK Debug y publicar los artefactos.
 
----
+Acceso a las ejecuciones:
 
-## 💻 Ejecución en Local
+https://github.com/oeljulio/Precio_Combustible_Esp/actions
 
-Al ser una aplicación web estática pura, no requiere `npm install` ni compiladores. Puedes ejecutarla con cualquier servidor local:
+El APK de pruebas se publica como `PreCoGas-debug`. La compilación y los tests todavía deben verificarse mediante una ejecución satisfactoria del workflow.
 
-**Usando Python:**
-```bash
-python3 -m http.server 8080
-```
+## Configuración Android
 
-**Usando Node.js:**
-```bash
-npx serve .
-```
+| Propiedad | Valor |
+|---|---|
+| Application ID | `es.precogas.app` |
+| Versión | `1.0.0` |
+| SDK mínimo | 26 |
+| SDK objetivo | 36 |
+| SDK compilación | 37 |
 
-Luego abre en tu navegador: `http://localhost:8080`
+## Archivos de la antigua PWA
 
----
+Se conservan en la raíz `index.html`, `manifest.webmanifest`, `sw.js`, `worker.js` e iconos de la versión web. Son archivos heredados y no forman parte de la aplicación Android nativa.
 
-## 📄 Licencia
+## Licencia
 
-Este proyecto está bajo la Licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para más detalles.
+Licencia MIT. Consulta el archivo [LICENSE](LICENSE).
