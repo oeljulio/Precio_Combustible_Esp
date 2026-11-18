@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import es.precogas.app.ThemeMode
 import es.precogas.app.CostMode
@@ -38,6 +39,7 @@ import es.precogas.app.data.model.StationRoute
 import es.precogas.app.location.DeviceLocationStatus
 import java.text.DateFormat
 import java.text.NumberFormat
+import java.math.BigDecimal
 import java.util.Date
 import java.util.Locale
 
@@ -151,6 +153,8 @@ fun PreCoGasHomeScreen(
 ) {
     var provinceMenuExpanded by remember { mutableStateOf(false) }
     var fuelMenuExpanded by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var sortOrder by remember { mutableStateOf(StationSortOrder.PRICE) }
     val selectedProduct = selectedFuelProduct?.let { FuelProduct.fromApiKey(it) }
     val selectedProductAvailable =
         selectedProduct != null && uiState.availableProducts.contains(selectedProduct)
@@ -178,6 +182,87 @@ fun PreCoGasHomeScreen(
         }
     } else {
         emptyList()
+    }
+
+    val routeSortingAvailable =
+        costMode != CostMode.REFUEL_ONLY &&
+            originLatitude?.let { it.isFinite() && it in -90.0..90.0 } == true &&
+            originLongitude?.let { it.isFinite() && it in -180.0..180.0 } == true &&
+            routeState.error == null &&
+            (routeState.isLoading || routeState.routes.isNotEmpty())
+
+    LaunchedEffect(routeSortingAvailable) {
+        if (!routeSortingAvailable && sortOrder == StationSortOrder.DISTANCE) {
+            sortOrder = StationSortOrder.PRICE
+        }
+    }
+
+    val comparisonStation = if (
+        sortOrder == StationSortOrder.TOTAL_COST &&
+        routeSortingAvailable &&
+        !routeState.isLoading
+    ) {
+        matchingStations.mapNotNull { station ->
+            val distance = routeState.routes[station.id]?.distanceMeters
+                ?.takeIf { it.isFinite() && it >= 0.0 }
+            distance?.let { station to it }
+        }.minByOrNull { it.second }?.first
+    } else {
+        null
+    }
+
+    val comparisonReferenceCost = comparisonStation?.let { station ->
+        stationTotalCost(
+            station,
+            selectedProduct ?: return@let null,
+            refuelQuantity,
+            vehicleConsumptionForProduct,
+            costMode,
+            routeState.routes[station.id]
+        )
+    }
+
+    val sortedStations = if (selectedProduct == null) {
+        emptyList()
+    } else {
+        when (sortOrder) {
+            StationSortOrder.PRICE -> matchingStations.sortedWith(
+                compareBy<FuelStation> {
+                    it.priceFor(selectedProduct) ?: Int.MAX_VALUE
+                }.thenBy { it.id }
+            )
+
+            StationSortOrder.DISTANCE -> matchingStations.sortedWith(
+                compareBy<FuelStation> {
+                    routeState.routes[it.id]?.distanceMeters
+                        ?.takeIf { distance -> distance.isFinite() && distance >= 0.0 }
+                        ?: Double.POSITIVE_INFINITY
+                }.thenBy { it.id }
+            )
+
+            StationSortOrder.TOTAL_COST -> matchingStations.sortedWith(
+                Comparator { first, second ->
+                    val firstCost = stationTotalCost(
+                        first, selectedProduct, refuelQuantity,
+                        vehicleConsumptionForProduct, costMode,
+                        routeState.routes[first.id]
+                    )
+                    val secondCost = stationTotalCost(
+                        second, selectedProduct, refuelQuantity,
+                        vehicleConsumptionForProduct, costMode,
+                        routeState.routes[second.id]
+                    )
+
+                    when {
+                        firstCost == null && secondCost == null ->
+                            first.id.compareTo(second.id)
+                        firstCost == null -> 1
+                        secondCost == null -> -1
+                        else -> firstCost.compareTo(secondCost)
+                    }
+                }
+            )
+        }
     }
 
     LaunchedEffect(costMode, originLatitude, originLongitude, matchingStations) {
@@ -355,34 +440,26 @@ fun PreCoGasHomeScreen(
 
                     if (selectedProduct != null) {
                         if (selectedProduct.priceUnit == "€/kg") {
-                            OutlinedTextField(
+                            PersistentNumericTextField(
                                 value = vehicleConsumptionKg,
-                                onValueChange = onVehicleConsumptionKgChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Consumo del vehículo (kg/100 km)") },
-                                singleLine = true
+                                label = "Consumo del vehículo (kg/100 km)",
+                                onValueChange = onVehicleConsumptionKgChange
                             )
-                            OutlinedTextField(
+                            PersistentNumericTextField(
                                 value = refuelKg,
-                                onValueChange = onRefuelKgChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Kilogramos que vas a repostar") },
-                                singleLine = true
+                                label = "Kilogramos que vas a repostar",
+                                onValueChange = onRefuelKgChange
                             )
                         } else {
-                            OutlinedTextField(
+                            PersistentNumericTextField(
                                 value = vehicleConsumption,
-                                onValueChange = onVehicleConsumptionChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Consumo del vehículo (L/100 km)") },
-                                singleLine = true
+                                label = "Consumo del vehículo (L/100 km)",
+                                onValueChange = onVehicleConsumptionChange
                             )
-                            OutlinedTextField(
+                            PersistentNumericTextField(
                                 value = refuelLiters,
-                                onValueChange = onRefuelLitersChange,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Litros que vas a repostar") },
-                                singleLine = true
+                                label = "Litros que vas a repostar",
+                                onValueChange = onRefuelLitersChange
                             )
                         }
                     }
@@ -495,10 +572,62 @@ fun PreCoGasHomeScreen(
         }
 
         item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Gasolineras (${matchingStations.size})",
+                    style = MaterialTheme.typography.titleLarge
+                )
+
+                Box {
+                    Button(onClick = { sortMenuExpanded = true }) {
+                        Text("Ordenar")
+                    }
+
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { sortMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Precio más bajo") },
+                            onClick = {
+                                sortOrder = StationSortOrder.PRICE
+                                sortMenuExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Distancia por carretera") },
+                            enabled = routeSortingAvailable,
+                            onClick = {
+                                sortOrder = StationSortOrder.DISTANCE
+                                sortMenuExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Coste total más bajo") },
+                            onClick = {
+                                sortOrder = StationSortOrder.TOTAL_COST
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             Text(
-                "Gasolineras (${matchingStations.size})",
-                style = MaterialTheme.typography.titleLarge
+                "Orden actual: ${sortOrder.label}",
+                style = MaterialTheme.typography.bodySmall
             )
+
+            if (sortOrder == StationSortOrder.DISTANCE && !routeSortingAvailable) {
+                Text(
+                    "La ordenación por carretera requiere ubicación y un modo de cálculo de desplazamiento.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
 
         if (costMode != CostMode.REFUEL_ONLY && routeState.isLoading) {
@@ -512,7 +641,7 @@ fun PreCoGasHomeScreen(
         if (costMode != CostMode.REFUEL_ONLY && routeState.error != null) {
             item {
                 Text(
-                    "No se pudieron consultar algunas rutas. Se utilizarán estimaciones cuando sea posible.",
+                    "No se pudieron calcular las rutas. Las distancias por carretera no están disponibles.",
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -547,14 +676,17 @@ fun PreCoGasHomeScreen(
             }
 
             else -> {
-                items(matchingStations, key = { it.id }) { station ->
+                items(sortedStations, key = { it.id }) { station ->
                     StationCard(
                         station = station,
                         selectedProduct = selectedProduct,
                         refuelQuantity = refuelQuantity,
                         vehicleConsumption = vehicleConsumptionForProduct,
                         costMode = costMode,
-                        route = routeState.routes[station.id]
+                        route = routeState.routes[station.id],
+                        showSavingsComparison = sortOrder == StationSortOrder.TOTAL_COST,
+                        comparisonStationId = comparisonStation?.id,
+                        comparisonReferenceCost = comparisonReferenceCost
                     )
                 }
             }
@@ -571,6 +703,42 @@ fun PreCoGasHomeScreen(
     }
 }
 
+private enum class StationSortOrder(val label: String) {
+    PRICE("Precio más bajo"),
+    DISTANCE("Distancia por carretera"),
+    TOTAL_COST("Coste total más bajo")
+}
+
+private fun stationTotalCost(
+    station: FuelStation,
+    selectedProduct: FuelProduct,
+    refuelQuantity: String,
+    vehicleConsumption: String,
+    costMode: CostMode,
+    route: StationRoute?
+): BigDecimal? {
+    val selectedPrice = station.priceFor(selectedProduct) ?: return null
+    val refuelCost = CostCalculator.refuelCost(refuelQuantity, selectedPrice)
+        ?: return null
+
+    if (costMode == CostMode.REFUEL_ONLY) {
+        return refuelCost
+    }
+
+    val validRoute = route?.takeIf {
+        it.distanceMeters.isFinite() && it.distanceMeters >= 0.0
+    } ?: return null
+
+    val travelCost = CostCalculator.travelCost(
+        distanceKm = validRoute.distanceKm,
+        consumption = vehicleConsumption,
+        priceMilli = selectedPrice,
+        roundTrip = costMode == CostMode.REFUEL_AND_ROUND_TRIP
+    ) ?: return null
+
+    return CostCalculator.totalCost(refuelCost, travelCost)
+}
+
 @Composable
 private fun StationCard(
     station: FuelStation,
@@ -578,7 +746,10 @@ private fun StationCard(
     refuelQuantity: String,
     vehicleConsumption: String,
     costMode: CostMode,
-    route: StationRoute?
+    route: StationRoute?,
+    showSavingsComparison: Boolean,
+    comparisonStationId: String?,
+    comparisonReferenceCost: BigDecimal?
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -606,25 +777,20 @@ private fun StationCard(
                 Text("Horario: ${station.hours}", style = MaterialTheme.typography.bodySmall)
             }
 
-            if (station.prices.isNotEmpty()) {
-                Text("Precios", style = MaterialTheme.typography.titleSmall)
-
-                FuelProduct.entries.forEach { product ->
-                    station.prices[product]?.let { price ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(product.displayName)
-                            Text(
-                                String.format(
-                                    Locale.forLanguageTag("es-ES"),
-                                    "%.3f ${product.priceUnit}",
-                                    price / 1000.0
-                                )
-                            )
-                        }
-                    }
+            station.priceFor(selectedProduct)?.let { price ->
+                Text("Precio de ${selectedProduct.displayName}", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(selectedProduct.displayName)
+                    Text(
+                        String.format(
+                            Locale.forLanguageTag("es-ES"),
+                            "%.3f ${selectedProduct.priceUnit}",
+                            price / 1000.0
+                        )
+                    )
                 }
             }
 
@@ -735,6 +901,29 @@ private fun StationCard(
                                     "Coste total: ${currencyFormat.format(totalCost)}",
                                     style = MaterialTheme.typography.titleMedium
                                 )
+
+                                if (
+                                    showSavingsComparison &&
+                                    comparisonReferenceCost != null &&
+                                    station.id != comparisonStationId
+                                ) {
+                                    val difference =
+                                        comparisonReferenceCost.subtract(totalCost)
+
+                                    val comparisonText = when {
+                                        difference.signum() > 0 ->
+                                            "Ahorras ${currencyFormat.format(difference)} frente a la gasolinera más cercana."
+                                        difference.signum() < 0 ->
+                                            "Cuesta ${currencyFormat.format(difference.abs())} más que ir a la gasolinera más cercana."
+                                        else ->
+                                            "El coste es igual al de la gasolinera más cercana."
+                                    }
+
+                                    Text(
+                                        comparisonText,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             } else {
                                 Text(
                                     "Introduce una cantidad de repostaje válida para calcular el coste total.",
@@ -752,4 +941,35 @@ private fun StationCard(
             }
         }
     }
+}
+
+@Composable
+private fun PersistentNumericTextField(
+    value: String,
+    label: String,
+    onValueChange: (String) -> Unit
+) {
+    var localValue by remember { mutableStateOf(value) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(value, isFocused) {
+        if (!isFocused && localValue != value) {
+            localValue = value
+        }
+    }
+
+    OutlinedTextField(
+        value = localValue,
+        onValueChange = { newValue ->
+            localValue = newValue
+            onValueChange(newValue)
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { focusState ->
+                isFocused = focusState.isFocused
+            },
+        label = { Text(label) },
+        singleLine = true
+    )
 }
