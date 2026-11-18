@@ -11,7 +11,7 @@ private val LightColors = lightColorScheme(
     primary = Petrol,
     onPrimary = LightSurface,
     secondary = SavingsGreen,
-    onSecondary = ColorWhite,
+    onSecondary = LightSurface,
     tertiary = AccentYellow,
     onTertiary = PetrolDark,
     background = LightBackground,
@@ -54,7 +54,6 @@ private val AmoledColors = darkColorScheme(
     surfaceContainerHigh = Color(0xFF171F26)
 )
 
-private val ColorWhite = Color(0xFFFFFFFF)
 
 @Composable
 fun PreCoGasTheme(
