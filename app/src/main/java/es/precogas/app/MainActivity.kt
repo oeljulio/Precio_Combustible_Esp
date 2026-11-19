@@ -26,7 +26,7 @@ import es.precogas.app.location.DeviceLocationStatus
 import es.precogas.app.ui.home.FuelViewModel
 import es.precogas.app.ui.home.FuelViewModelFactory
 import es.precogas.app.ui.home.PreCoGasHomeScreen
-import es.precogas.app.ui.home.ProvinceSelectionScreen
+import es.precogas.app.ui.home.InitialSetupScreen
 import es.precogas.app.ui.theme.PreCoGasTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -222,10 +222,17 @@ class MainActivity : ComponentActivity() {
                     }
 
                     province == null -> {
-                        ProvinceSelectionScreen(
-                            onProvinceSelected = { selected ->
+                        InitialSetupScreen(
+                            onSetupComplete = { selectedProv, selectedProd, consumption, radius ->
                                 coroutineScope.launch {
-                                    themePreferences.setProvinceId(selected.id)
+                                    themePreferences.setProvinceId(selectedProv.id)
+                                    themePreferences.setSelectedFuelProduct(selectedProd.apiKey)
+                                    if (selectedProd.priceUnit == "€/kg") {
+                                        themePreferences.setVehicleConsumptionKg(consumption)
+                                    } else {
+                                        themePreferences.setVehicleConsumption(consumption)
+                                    }
+                                    themePreferences.setSearchRadiusKm(radius)
                                 }
                             }
                         )

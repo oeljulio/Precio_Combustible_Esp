@@ -157,11 +157,12 @@ class FuelViewModel(
                 throw error
             } catch (error: Exception) {
                 if (activeRouteKey == key) {
+                    activeRouteKey = null
                     _routeState.value = RouteUiState(
                         error = error.message?.takeIf { it.isNotBlank() }
                             ?: "No se pudieron calcular las rutas."
                     )
-               }
+                }
             }
         }
     }

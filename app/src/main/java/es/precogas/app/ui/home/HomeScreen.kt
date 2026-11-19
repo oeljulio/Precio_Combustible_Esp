@@ -16,6 +16,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import es.precogas.app.ThemeMode
 import es.precogas.app.CostMode
+import es.precogas.app.data.model.FuelCategory
 import es.precogas.app.data.model.FuelProduct
 import es.precogas.app.data.model.Province
 import es.precogas.app.data.model.ProvinceCatalog
@@ -50,11 +52,23 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ProvinceSelectionScreen(
-    onProvinceSelected: (Province) -> Unit
+fun InitialSetupScreen(
+    onSetupComplete: (Province, FuelProduct, String, Int) -> Unit
 ) {
     var selectedProvince by remember { mutableStateOf<Province?>(null) }
+    var selectedProduct by remember { mutableStateOf<FuelProduct?>(null) }
+    var consumption by remember { mutableStateOf("") }
+    var searchRadiusKm by remember { mutableStateOf(25) }
+
     var provinceMenuExpanded by remember { mutableStateOf(false) }
+    var fuelMenuExpanded by remember { mutableStateOf(false) }
+
+    val standardProducts = remember {
+        FuelProduct.entries.filter { it.category != FuelCategory.ADDITIVE }
+    }
+
+    val consumptionValid = CostCalculator.parsePositive(consumption) != null
+    val canProceed = selectedProvince != null && selectedProduct != null && consumptionValid
 
     Column(
         modifier = Modifier
@@ -82,33 +96,84 @@ fun ProvinceSelectionScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    "Selecciona tu provincia",
+                    "Configuración inicial",
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    "Elige la provincia para consultar las gasolineras "
-                    + "y los precios de los combustibles disponibles."
+                    "Elige tu provincia, combustible habitual, consumo del vehículo y radio de búsqueda."
                 )
 
-                Box {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { provinceMenuExpanded = true }
-                    ) {
-                        Text(selectedProvince?.name ?: "Elegir provincia")
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Provincia", style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { provinceMenuExpanded = true }
+                        ) {
+                            Text(selectedProvince?.name ?: "Elegir provincia")
+                        }
 
-                    DropdownMenu(
-                        expanded = provinceMenuExpanded,
-                        onDismissRequest = { provinceMenuExpanded = false }
-                    ) {
-                        ProvinceCatalog.all.forEach { province ->
-                            DropdownMenuItem(
-                                text = { Text(province.name) },
-                                onClick = {
-                                    selectedProvince = province
-                                    provinceMenuExpanded = false
-                                }
+                        DropdownMenu(
+                            expanded = provinceMenuExpanded,
+                            onDismissRequest = { provinceMenuExpanded = false }
+                        ) {
+                            ProvinceCatalog.all.forEach { province ->
+                                DropdownMenuItem(
+                                    text = { Text(province.name) },
+                                    onClick = {
+                                        selectedProvince = province
+                                        provinceMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Combustible habitual", style = MaterialTheme.typography.labelLarge)
+                    Box {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { fuelMenuExpanded = true }
+                        ) {
+                            Text(selectedProduct?.displayName ?: "Selecciona un combustible")
+                        }
+
+                        DropdownMenu(
+                            expanded = fuelMenuExpanded,
+                            onDismissRequest = { fuelMenuExpanded = false }
+                        ) {
+                            standardProducts.forEach { product ->
+                                DropdownMenuItem(
+                                    text = { Text(product.displayName) },
+                                    onClick = {
+                                        selectedProduct = product
+                                        fuelMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val unitLabel = if (selectedProduct?.priceUnit == "€/kg") "kg/100 km" else "L/100 km"
+                    PersistentNumericTextField(
+                        value = consumption,
+                        label = "Consumo del vehículo ($unitLabel)",
+                        onValueChange = { consumption = it }
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Radio de búsqueda", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(25, 50, 100).forEach { radius ->
+                            FilterChip(
+                                selected = searchRadiusKm == radius,
+                                onClick = { searchRadiusKm = radius },
+                                label = { Text("$radius km") }
                             )
                         }
                     }
@@ -116,12 +181,241 @@ fun ProvinceSelectionScreen(
 
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = selectedProvince != null,
+                    enabled = canProceed,
                     onClick = {
-                        selectedProvince?.let(onProvinceSelected)
+                        val prov = selectedProvince ?: return@Button
+                        val prod = selectedProduct ?: return@Button
+                        onSetupComplete(prov, prod, consumption, searchRadiusKm)
                     }
                 ) {
-                    Text("Continuar")
+                    Text("Comenzar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProvinceSelectionScreen(
+    onProvinceSelected: (Province) -> Unit
+) {
+    InitialSetupScreen(
+        onSetupComplete = { province, _, _, _ ->
+            onProvinceSelected(province)
+        }
+    )
+}
+
+@Composable
+fun SettingsScreen(
+    onClose: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeChange: (ThemeMode) -> Unit,
+    currentProvince: Province?,
+    onProvinceChange: (Province) -> Unit,
+    selectedFuelProduct: String?,
+    availableProducts: List<FuelProduct>,
+    onSelectedFuelProductChange: (String?) -> Unit,
+    vehicleConsumption: String,
+    onVehicleConsumptionChange: (String) -> Unit,
+    vehicleConsumptionKg: String,
+    onVehicleConsumptionKgChange: (String) -> Unit,
+    searchRadiusKm: Int,
+    onSearchRadiusChange: (Int) -> Unit,
+    uiState: HomeUiState,
+    onRefresh: () -> Unit
+) {
+    var provinceMenuExpanded by remember { mutableStateOf(false) }
+    var fuelMenuExpanded by remember { mutableStateOf(false) }
+
+    val selectedProduct = selectedFuelProduct?.let { FuelProduct.fromApiKey(it) }
+    val productsToSelect = if (availableProducts.isNotEmpty()) {
+        availableProducts
+    } else {
+        FuelProduct.entries.filter { it.category != FuelCategory.ADDITIVE }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                Text(
+                    "Ajustes",
+                    style = MaterialTheme.typography.headlineLarge
+                )
+                Button(onClick = onClose) {
+                    Text("Volver")
+                }
+            }
+        }
+
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Apariencia", style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = themeMode == mode,
+                                onClick = { onThemeChange(mode) },
+                                label = {
+                                    Text(
+                                        when (mode) {
+                                            ThemeMode.LIGHT -> "Claro"
+                                            ThemeMode.DARK -> "Oscuro"
+                                            ThemeMode.AMOLED -> "AMOLED"
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("Configuración de búsqueda", style = MaterialTheme.typography.titleMedium)
+
+                    Text("Provincia")
+                    Box {
+                        Button(
+                            onClick = { provinceMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(currentProvince?.name ?: "Elegir provincia")
+                        }
+                        DropdownMenu(
+                            expanded = provinceMenuExpanded,
+                            onDismissRequest = { provinceMenuExpanded = false }
+                        ) {
+                            ProvinceCatalog.all.forEach { province ->
+                                DropdownMenuItem(
+                                    text = { Text(province.name) },
+                                    onClick = {
+                                        provinceMenuExpanded = false
+                                        onProvinceChange(province)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Text("Combustible habitual")
+                    Box {
+                        Button(
+                            onClick = { fuelMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(selectedProduct?.displayName ?: "Selecciona un combustible")
+                        }
+                        DropdownMenu(
+                            expanded = fuelMenuExpanded,
+                            onDismissRequest = { fuelMenuExpanded = false }
+                        ) {
+                            productsToSelect.forEach { product ->
+                                DropdownMenuItem(
+                                    text = { Text(product.displayName) },
+                                    onClick = {
+                                        onSelectedFuelProductChange(product.apiKey)
+                                        fuelMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (selectedProduct?.priceUnit == "€/kg") {
+                        PersistentNumericTextField(
+                            value = vehicleConsumptionKg,
+                            label = "Consumo del vehículo (kg/100 km)",
+                            onValueChange = onVehicleConsumptionKgChange
+                        )
+                    } else {
+                        PersistentNumericTextField(
+                            value = vehicleConsumption,
+                            label = "Consumo del vehículo (L/100 km)",
+                            onValueChange = onVehicleConsumptionChange
+                        )
+                    }
+
+                    Text("Radio de búsqueda")
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(25, 50, 100).forEach { radius ->
+                            FilterChip(
+                                selected = searchRadiusKm == radius,
+                                onClick = { onSearchRadiusChange(radius) },
+                                label = { Text("$radius km") }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Información MITECO", style = MaterialTheme.typography.titleMedium)
+
+                    if (uiState.isRefreshing) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator()
+                            Text("Actualizando precios y estaciones…")
+                        }
+                    } else {
+                        Text("Consulta de datos finalizada")
+                    }
+
+                    uiState.officialDate?.let {
+                        Text("Fecha oficial: $it")
+                    }
+
+                    uiState.downloadedAtMillis?.takeIf { it > 0 }?.let {
+                        val date = DateFormat.getDateTimeInstance(
+                            DateFormat.MEDIUM,
+                            DateFormat.SHORT,
+                            Locale.forLanguageTag("es-ES")
+                        ).format(Date(it))
+                        Text("Fecha y hora de última consulta: $date")
+                    }
+
+                    if (uiState.refreshError != null) {
+                        Text(
+                            "No se pudo actualizar: ${uiState.refreshError}",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    if (uiState.note.isNotBlank()) {
+                        Text(uiState.note, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    Button(
+                        onClick = onRefresh,
+                        enabled = !uiState.isRefreshing
+                    ) {
+                        Text("Actualizar precios")
+                    }
                 }
             }
         }
@@ -157,6 +451,30 @@ fun PreCoGasHomeScreen(
     onSelectedFuelProductChange: (String?) -> Unit,
     onCostModeChange: (CostMode) -> Unit
 ) {
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (showSettings) {
+        SettingsScreen(
+            onClose = { showSettings = false },
+            themeMode = themeMode,
+            onThemeChange = onThemeChange,
+            currentProvince = uiState.province,
+            onProvinceChange = onProvinceChange,
+            selectedFuelProduct = selectedFuelProduct,
+            availableProducts = uiState.availableProducts,
+            onSelectedFuelProductChange = onSelectedFuelProductChange,
+            vehicleConsumption = vehicleConsumption,
+            onVehicleConsumptionChange = onVehicleConsumptionChange,
+            vehicleConsumptionKg = vehicleConsumptionKg,
+            onVehicleConsumptionKgChange = onVehicleConsumptionKgChange,
+            searchRadiusKm = searchRadiusKm,
+            onSearchRadiusChange = onSearchRadiusChange,
+            uiState = uiState,
+            onRefresh = onRefresh
+        )
+        return
+    }
+
     var provinceMenuExpanded by remember { mutableStateOf(false) }
     var fuelMenuExpanded by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -336,78 +654,56 @@ fun PreCoGasHomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "PreCoGas",
-                    style = MaterialTheme.typography.headlineLarge
-                )
-                Text(
-                    "Encuentra. Compara. Ahorra.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "Provincia",
-                        style = MaterialTheme.typography.titleMedium
+                        "PreCoGas",
+                        style = MaterialTheme.typography.headlineLarge
                     )
                     Text(
-                        uiState.province?.name ?: "Provincia no seleccionada",
+                        "Encuentra. Compara. Ahorra.",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Box {
-                        Button(onClick = { provinceMenuExpanded = true }) {
-                            Text("Cambiar provincia")
-                        }
-                        DropdownMenu(
-                            expanded = provinceMenuExpanded,
-                            onDismissRequest = { provinceMenuExpanded = false }
-                        ) {
-                            ProvinceCatalog.all.forEach { province ->
-                                DropdownMenuItem(
-                                    text = { Text(province.name) },
-                                    onClick = {
-                                        provinceMenuExpanded = false
-                                        onProvinceChange(province)
-                                    }
-                                )
-                            }
-                        }
-                    }
+                }
+                OutlinedButton(onClick = { showSettings = true }) {
+                    Text("Ajustes")
                 }
             }
         }
 
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Apariencia", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = themeMode == mode,
-                                onClick = { onThemeChange(mode) },
-                                label = {
-                                    Text(
-                                        when (mode) {
-                                            ThemeMode.LIGHT -> "Claro"
-                                            ThemeMode.DARK -> "Oscuro"
-                                            ThemeMode.AMOLED -> "AMOLED"
-                                        }
-                                    )
-                                }
-                            )
-                        }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            "📍 ${uiState.province?.name ?: "Sin provincia"} · 🎯 $searchRadiusKm km",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        val unit = if (selectedProduct?.priceUnit == "€/kg") "kg/100 km" else "L/100 km"
+                        Text(
+                            "⛽ ${selectedProduct?.displayName ?: "Sin combustible"} (${vehicleConsumptionForProduct.ifBlank { "--" }} $unit)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showSettings = true },
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text("Editar")
                     }
                 }
             }
@@ -420,58 +716,45 @@ fun PreCoGasHomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        "Búsqueda y repostaje",
+                        "Cálculo y repostaje",
                         style = MaterialTheme.typography.titleMedium
                     )
-
-                    Text("Combustible")
-                    Button(
-                        onClick = { fuelMenuExpanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(selectedProduct?.displayName ?: "Selecciona un combustible")
-                    }
-                    DropdownMenu(
-                        expanded = fuelMenuExpanded,
-                        onDismissRequest = { fuelMenuExpanded = false }
-                    ) {
-                        uiState.availableProducts.forEach { product ->
-                            DropdownMenuItem(
-                                text = { Text(product.displayName) },
-                                onClick = {
-                                    onSelectedFuelProductChange(product.apiKey)
-                                    fuelMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
 
                     if (selectedProduct == null) {
                         Text(
                             "Selecciona un combustible para comparar precios y calcular costes.",
                             style = MaterialTheme.typography.bodySmall
                         )
+                        Button(
+                            onClick = { fuelMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Seleccionar combustible")
+                        }
+                        DropdownMenu(
+                            expanded = fuelMenuExpanded,
+                            onDismissRequest = { fuelMenuExpanded = false }
+                        ) {
+                            uiState.availableProducts.forEach { product ->
+                                DropdownMenuItem(
+                                    text = { Text(product.displayName) },
+                                    onClick = {
+                                        onSelectedFuelProductChange(product.apiKey)
+                                        fuelMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     } else if (!selectedProductAvailable) {
                         Text(
                             "Este combustible no tiene precios disponibles en la provincia seleccionada. " +
-                                "Se conserva tu elección; puedes elegir otro producto.",
+                                "Se conserva tu elección; puedes elegir otro producto desde Ajustes.",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
 
-                    Text("Radio de búsqueda")
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(25, 50, 100).forEach { radius ->
-                            FilterChip(
-                                selected = searchRadiusKm == radius,
-                                onClick = { onSearchRadiusChange(radius) },
-                                label = { Text("$radius km") }
-                            )
-                        }
-                    }
-
-                    Text("Cálculo de costes")
+                    Text("Modalidad de cálculo")
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         FilterChip(
                             selected = costMode == CostMode.REFUEL_ONLY,
@@ -493,21 +776,11 @@ fun PreCoGasHomeScreen(
                     if (selectedProduct != null) {
                         if (selectedProduct.priceUnit == "€/kg") {
                             PersistentNumericTextField(
-                                value = vehicleConsumptionKg,
-                                label = "Consumo del vehículo (kg/100 km)",
-                                onValueChange = onVehicleConsumptionKgChange
-                            )
-                            PersistentNumericTextField(
                                 value = refuelKg,
                                 label = "Kilogramos que vas a repostar",
                                 onValueChange = onRefuelKgChange
                             )
                         } else {
-                            PersistentNumericTextField(
-                                value = vehicleConsumption,
-                                label = "Consumo del vehículo (L/100 km)",
-                                onValueChange = onVehicleConsumptionChange
-                            )
                             PersistentNumericTextField(
                                 value = refuelLiters,
                                 label = "Litros que vas a repostar",
@@ -519,8 +792,7 @@ fun PreCoGasHomeScreen(
                     if (costMode != CostMode.REFUEL_ONLY) {
                         Text(
                             "La ubicación permite filtrar las estaciones por el radio " +
-                                "seleccionado. El radio representa distancia en línea recta, " +
-                                "no distancia por carretera.",
+                                "seleccionado ($searchRadiusKm km en línea recta).",
                             style = MaterialTheme.typography.bodySmall
                         )
 
@@ -568,56 +840,6 @@ fun PreCoGasHomeScreen(
                                 }
                             )
                         }
-                    }
-                }
-            }
-        }
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("Datos de MITECO", style = MaterialTheme.typography.titleMedium)
-
-                    if (uiState.isRefreshing) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CircularProgressIndicator()
-                            Text("Actualizando precios y estaciones…")
-                        }
-                    } else {
-                        Text("Consulta de datos finalizada")
-                    }
-
-                    uiState.officialDate?.let {
-                        Text("Fecha oficial: $it")
-                    }
-
-                    uiState.downloadedAtMillis?.takeIf { it > 0 }?.let {
-                        val date = DateFormat.getDateTimeInstance(
-                            DateFormat.MEDIUM,
-                            DateFormat.SHORT,
-                            Locale.forLanguageTag("es-ES")
-                        ).format(Date(it))
-                        Text("Última descarga: $date")
-                    }
-
-                    if (uiState.refreshError != null) {
-                        Text(
-                            "No se pudo actualizar: ${uiState.refreshError}",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    if (uiState.note.isNotBlank()) {
-                        Text(uiState.note, style = MaterialTheme.typography.bodySmall)
-                    }
-
-                    Button(
-                        onClick = onRefresh,
-                        enabled = !uiState.isRefreshing
-                    ) {
-                        Text("Actualizar precios")
                     }
                 }
             }
@@ -692,6 +914,7 @@ fun PreCoGasHomeScreen(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            }
         }
 
         if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.isLoading) {
@@ -704,10 +927,20 @@ fun PreCoGasHomeScreen(
         }
         if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.error != null) {
             item {
-                Text(
-                    "No se pudieron calcular las rutas. Las distancias por carretera no están disponibles.",
-                    color = MaterialTheme.colorScheme.error
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "No se pudieron calcular las rutas. Las distancias por carretera no están disponibles.",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Button(
+                        onClick = {
+                            onClearRoutes()
+                            routeRetryToken++
+                        }
+                    ) {
+                        Text("Reintentar cálculo de rutas")
+                    }
+                }
             }
         }
         if (routeRetryAvailable) {
@@ -1121,6 +1354,8 @@ private fun PersistentNumericTextField(
         }
     }
 
+    val isInvalid = localValue.isNotBlank() && CostCalculator.parsePositive(localValue) == null
+
     OutlinedTextField(
         value = localValue,
         onValueChange = { newValue ->
@@ -1133,6 +1368,12 @@ private fun PersistentNumericTextField(
                 isFocused = focusState.isFocused
             },
         label = { Text(label) },
+        isError = isInvalid,
+        supportingText = if (isInvalid) {
+            { Text("Introduce un valor numérico positivo válido.") }
+        } else {
+            null
+        },
         singleLine = true,
         keyboardOptions = KeyboardOptions(
             keyboardType = KeyboardType.Decimal,
