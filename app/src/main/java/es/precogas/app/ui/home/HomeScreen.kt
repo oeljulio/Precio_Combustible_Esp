@@ -161,6 +161,7 @@ fun PreCoGasHomeScreen(
     var fuelMenuExpanded by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var sortOrder by remember { mutableStateOf(StationSortOrder.PRICE) }
+    var routeRetryToken by remember { mutableStateOf(0) }
     val selectedProduct = selectedFuelProduct?.let { FuelProduct.fromApiKey(it) }
     val selectedProductAvailable =
         selectedProduct != null && uiState.availableProducts.contains(selectedProduct)
@@ -190,16 +191,35 @@ fun PreCoGasHomeScreen(
         emptyList()
     }
 
-    val routeSortingAvailable =
-        costMode != CostMode.REFUEL_ONLY &&
-            originLatitude?.let { it.isFinite() && it in -90.0..90.0 } == true &&
-            originLongitude?.let { it.isFinite() && it in -180.0..180.0 } == true &&
-            routeState.error == null &&
-            (routeState.isLoading || routeState.routes.isNotEmpty())
+    val hasValidOrigin =
+        originLatitude?.let { it.isFinite() && it in -90.0..90.0 } == true &&
+        originLongitude?.let { it.isFinite() && it in -180.0..180.0 } == true
 
-    LaunchedEffect(routeSortingAvailable) {
-        if (!routeSortingAvailable && sortOrder == StationSortOrder.DISTANCE) {
-            sortOrder = StationSortOrder.PRICE
+    val routeSortingAvailable =
+        hasValidOrigin &&
+        routeState.error == null &&
+        (routeState.isLoading || routeState.routes.isNotEmpty())
+
+    val routeRequestsRelevant =
+        costMode != CostMode.REFUEL_ONLY ||
+            sortOrder == StationSortOrder.DISTANCE
+
+    val routeRetryAvailable =
+        routeRequestsRelevant &&
+            !routeState.isLoading &&
+            routeState.routes.values.any { route ->
+                route.outboundRequestFailed ||
+                    (
+                        costMode == CostMode.REFUEL_AND_ROUND_TRIP &&
+                            route.returnRequestFailed
+                    )
+            }
+
+    LaunchedEffect(costMode) {
+        sortOrder = if (costMode == CostMode.REFUEL_ONLY) {
+            StationSortOrder.PRICE
+        } else {
+            StationSortOrder.TOTAL_COST
         }
     }
 
@@ -209,8 +229,12 @@ fun PreCoGasHomeScreen(
         !routeState.isLoading
     ) {
         matchingStations.mapNotNull { station ->
-            val distance = routeState.routes[station.id]?.distanceMeters
-                ?.takeIf { it.isFinite() && it >= 0.0 }
+            val route = routeState.routes[station.id]
+            val distance = if (costMode == CostMode.REFUEL_AND_ROUND_TRIP) {
+                route?.roundTripDistanceMeters
+            } else {
+                route?.distanceMeters
+            }?.takeIf { it.isFinite() && it >= 0.0 }
             distance?.let { station to it }
         }.minByOrNull { it.second }?.first
     } else {
@@ -258,7 +282,6 @@ fun PreCoGasHomeScreen(
                         vehicleConsumptionForProduct, costMode,
                         routeState.routes[second.id]
                     )
-
                     when {
                         firstCost == null && secondCost == null ->
                             first.id.compareTo(second.id)
@@ -268,12 +291,36 @@ fun PreCoGasHomeScreen(
                     }
                 }
             )
+
+            StationSortOrder.TRAVEL_TIME -> matchingStations.sortedWith(
+                compareBy<FuelStation> {
+                    val route = routeState.routes[it.id]
+                    val seconds = if (costMode == CostMode.REFUEL_AND_ROUND_TRIP) {
+                        route?.roundTripDurationSeconds
+                    } else {
+                        route?.durationSeconds
+                    }
+                    seconds?.takeIf { value -> value.isFinite() && value >= 0.0 }
+                        ?: Double.POSITIVE_INFINITY
+                }.thenBy { it.id }
+            )
         }
     }
 
-    LaunchedEffect(costMode, originLatitude, originLongitude, matchingStations) {
+    LaunchedEffect(
+        costMode,
+        originLatitude,
+        originLongitude,
+        matchingStations,
+        sortOrder,
+        routeRetryToken
+    ) {
+        val routesNeeded =
+            costMode != CostMode.REFUEL_ONLY ||
+            sortOrder == StationSortOrder.DISTANCE
+
         if (
-            costMode != CostMode.REFUEL_ONLY &&
+            routesNeeded &&
             originLatitude != null && originLongitude != null &&
             matchingStations.isNotEmpty()
         ) {
@@ -282,7 +329,6 @@ fun PreCoGasHomeScreen(
             onClearRoutes()
         }
     }
-
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -597,28 +643,40 @@ fun PreCoGasHomeScreen(
                         expanded = sortMenuExpanded,
                         onDismissRequest = { sortMenuExpanded = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Precio más bajo") },
-                            onClick = {
-                                sortOrder = StationSortOrder.PRICE
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Distancia por carretera") },
-                            enabled = routeSortingAvailable,
-                            onClick = {
-                                sortOrder = StationSortOrder.DISTANCE
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Coste total más bajo") },
-                            onClick = {
-                                sortOrder = StationSortOrder.TOTAL_COST
-                                sortMenuExpanded = false
-                            }
-                        )
+                        if (costMode == CostMode.REFUEL_ONLY) {
+                            DropdownMenuItem(
+                                text = { Text("Precio más bajo") },
+                                onClick = {
+                                    sortOrder = StationSortOrder.PRICE
+                                    sortMenuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Distancia por carretera") },
+                                onClick = {
+                                    sortOrder = StationSortOrder.DISTANCE
+                                    sortMenuExpanded = false
+                                    if (!hasValidOrigin) {
+                                        onRequestLocation()
+                                    }
+                                }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Coste total más bajo") },
+                                onClick = {
+                                    sortOrder = StationSortOrder.TOTAL_COST
+                                    sortMenuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Tiempo de viaje") },
+                                onClick = {
+                                    sortOrder = StationSortOrder.TRAVEL_TIME
+                                    sortMenuExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -630,13 +688,13 @@ fun PreCoGasHomeScreen(
 
             if (sortOrder == StationSortOrder.DISTANCE && !routeSortingAvailable) {
                 Text(
-                    "La ordenación por carretera requiere ubicación y un modo de cálculo de desplazamiento.",
+                    "La ordenación por carretera requiere compartir tu ubicación y calcular la ruta.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         }
 
-        if (costMode != CostMode.REFUEL_ONLY && routeState.isLoading) {
+        if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.isLoading) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator()
@@ -644,12 +702,29 @@ fun PreCoGasHomeScreen(
                 }
             }
         }
-        if (costMode != CostMode.REFUEL_ONLY && routeState.error != null) {
+        if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.error != null) {
             item {
                 Text(
                     "No se pudieron calcular las rutas. Las distancias por carretera no están disponibles.",
                     color = MaterialTheme.colorScheme.error
                 )
+            }
+        }
+        if (routeRetryAvailable) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "No se ha podido obtener la ruta después de tres intentos."
+                    )
+                    Button(
+                        onClick = {
+                            onClearRoutes()
+                            routeRetryToken++
+                        }
+                    ) {
+                        Text("Reintentar")
+                    }
+                }
             }
         }
         when {
@@ -665,12 +740,16 @@ fun PreCoGasHomeScreen(
                 }
             }
 
-            costMode != CostMode.REFUEL_ONLY &&
-                (originLatitude == null || originLongitude == null) -> {
+            (costMode != CostMode.REFUEL_ONLY ||
+                sortOrder == StationSortOrder.DISTANCE) && !hasValidOrigin -> {
                 item {
                     Text(
-                        "Necesitas compartir tu ubicación para mostrar las estaciones " +
-                            "dentro del radio seleccionado."
+                        if (costMode == CostMode.REFUEL_ONLY) {
+                            "Comparte tu ubicación para ordenar por distancia por carretera."
+                        } else {
+                            "Necesitas compartir tu ubicación para mostrar las estaciones " +
+                                "dentro del radio seleccionado."
+                        }
                     )
                 }
             }
@@ -691,6 +770,7 @@ fun PreCoGasHomeScreen(
                         costMode = costMode,
                         route = routeState.routes[station.id],
                         showSavingsComparison = sortOrder == StationSortOrder.TOTAL_COST,
+                        showRouteDistance = costMode == CostMode.REFUEL_ONLY && sortOrder == StationSortOrder.DISTANCE,
                         comparisonStationId = comparisonStation?.id,
                         comparisonReferenceCost = comparisonReferenceCost
                     )
@@ -698,7 +778,7 @@ fun PreCoGasHomeScreen(
             }
         }
 
-        if (costMode != CostMode.REFUEL_ONLY) {
+        if (costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) {
             item {
                 Text(
                     "Rutas: © OpenStreetMap contributors · OSRM",
@@ -712,7 +792,8 @@ fun PreCoGasHomeScreen(
 private enum class StationSortOrder(val label: String) {
     PRICE("Precio más bajo"),
     DISTANCE("Distancia por carretera"),
-    TOTAL_COST("Coste total más bajo")
+    TOTAL_COST("Coste total más bajo"),
+    TRAVEL_TIME("Tiempo de viaje")
 }
 
 private fun stationTotalCost(
@@ -735,11 +816,17 @@ private fun stationTotalCost(
         it.distanceMeters.isFinite() && it.distanceMeters >= 0.0
     } ?: return null
 
+    val travelDistanceKm = if (costMode == CostMode.REFUEL_AND_ROUND_TRIP) {
+        validRoute.roundTripDistanceKm ?: return null
+    } else {
+        validRoute.distanceKm
+    }
+
     val travelCost = CostCalculator.travelCost(
-        distanceKm = validRoute.distanceKm,
+        distanceKm = travelDistanceKm,
         consumption = vehicleConsumption,
         priceMilli = selectedPrice,
-        roundTrip = costMode == CostMode.REFUEL_AND_ROUND_TRIP
+        roundTrip = false
     ) ?: return null
 
     return CostCalculator.totalCost(refuelCost, travelCost)
@@ -754,6 +841,7 @@ private fun StationCard(
     costMode: CostMode,
     route: StationRoute?,
     showSavingsComparison: Boolean,
+    showRouteDistance: Boolean,
     comparisonStationId: String?,
     comparisonReferenceCost: BigDecimal?
 ) {
@@ -822,7 +910,7 @@ private fun StationCard(
                     )
                 }
 
-                if (costMode != CostMode.REFUEL_ONLY) {
+                if (costMode != CostMode.REFUEL_ONLY || showRouteDistance) {
                     val validRoute = route?.takeIf {
                         it.distanceMeters.isFinite() && it.distanceMeters >= 0.0
                     }
@@ -836,31 +924,77 @@ private fun StationCard(
                             },
                             style = MaterialTheme.typography.bodySmall
                         )
-                    } else {
-                        val roundTrip = costMode == CostMode.REFUEL_AND_ROUND_TRIP
-                        val distanceMultiplier = if (roundTrip) 2.0 else 1.0
-                        val displayedDistance = validRoute.distanceKm * distanceMultiplier
-                        val distanceLabel = when {
-                            validRoute.isEstimated -> "Distancia estimada"
-                            roundTrip -> "Distancia por carretera (ida y vuelta)"
-                            else -> "Distancia por carretera (ida)"
-                        }
-
+                    } else if (costMode == CostMode.REFUEL_ONLY) {
                         Text(
-                            "$distanceLabel: ${
+                            "${if (validRoute.isEstimated) "Distancia estimada" else "Distancia por carretera"}: ${
                                 String.format(
                                     Locale.forLanguageTag("es-ES"),
                                     "%.1f km",
-                                    displayedDistance
+                                    validRoute.distanceKm
                                 )
                             }"
                         )
+                        if (validRoute.isEstimated) {
+                            Text(
+                                "Distancia aproximada; no se ha podido obtener la ruta real por carretera.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    } else {
+                        val roundTrip =
+                            costMode == CostMode.REFUEL_AND_ROUND_TRIP
 
-                        validRoute.durationSeconds
-                            ?.takeIf { it.isFinite() && it >= 0.0 }
-                            ?.let { seconds ->
+                        val travelDistanceKm = if (roundTrip) {
+                            validRoute.roundTripDistanceKm
+                        } else {
+                            validRoute.distanceKm
+                        }
+
+                        if (roundTrip && travelDistanceKm == null) {
+                            Text(
+                                "Distancia de ida: ${
+                                    String.format(
+                                        Locale.forLanguageTag("es-ES"),
+                                        "%.1f km",
+                                        validRoute.distanceKm
+                                    )
+                                }",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "No se ha podido calcular la vuelta; la distancia, el coste y el tiempo de ida y vuelta no están disponibles.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else {
+                            val distanceLabel = when {
+                                validRoute.isEstimated -> "Distancia estimada de ida"
+                                roundTrip -> "Distancia por carretera (ida y vuelta)"
+                                else -> "Distancia por carretera (ida)"
+                            }
+
+                            Text(
+                                "$distanceLabel: ${
+                                    String.format(
+                                        Locale.forLanguageTag("es-ES"),
+                                        "%.1f km",
+                                        travelDistanceKm
+                                    )
+                                }"
+                            )
+
+                            val travelDurationSeconds = if (roundTrip) {
+                                validRoute.roundTripDurationSeconds
+                            } else {
+                                validRoute.durationSeconds?.takeIf {
+                                    it.isFinite() && it >= 0.0
+                                }
+                            }
+
+                            if (travelDurationSeconds != null) {
                                 val minutes = kotlin.math.ceil(
-                                    seconds * distanceMultiplier / 60.0
+                                    travelDurationSeconds / 60.0
                                 ).toInt()
                                 val hoursPart = minutes / 60
                                 val minutesPart = minutes % 60
@@ -869,6 +1003,7 @@ private fun StationCard(
                                 } else {
                                     "$minutesPart min"
                                 }
+
                                 Text(
                                     if (roundTrip) {
                                         "Tiempo estimado de ida y vuelta: $duration"
@@ -877,69 +1012,90 @@ private fun StationCard(
                                     },
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                            } else {
+                                Text(
+                                    if (roundTrip) {
+                                        "Tiempo de ida y vuelta no disponible."
+                                    } else {
+                                        "Tiempo de ida no disponible."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
 
-                        if (validRoute.isEstimated) {
-                            Text(
-                                "Ruta estimada; no se ha podido obtener la distancia real por carretera.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-
-                        val travelCost = CostCalculator.travelCost(
-                            distanceKm = validRoute.distanceKm,
-                            consumption = vehicleConsumption,
-                            priceMilli = selectedPrice,
-                            roundTrip = roundTrip
-                        )
-
-                        if (travelCost != null) {
-                            Text(
-                                "Coste del desplazamiento: ${currencyFormat.format(travelCost)}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-
-                            val totalCost = CostCalculator.totalCost(refuelCost, travelCost)
-                            if (totalCost != null) {
+                            if (validRoute.isEstimated) {
                                 Text(
-                                    "Coste total: ${currencyFormat.format(totalCost)}",
-                                    style = MaterialTheme.typography.titleMedium
+                                    "Ruta estimada; no se ha podido obtener la distancia real por carretera.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            val travelCost = if (
+                                travelDistanceKm != null &&
+                                (!roundTrip || !validRoute.isEstimated)
+                            ) {
+                                CostCalculator.travelCost(
+                                    distanceKm = travelDistanceKm,
+                                    consumption = vehicleConsumption,
+                                    priceMilli = selectedPrice,
+                                    roundTrip = false
+                                )
+                            } else {
+                                null
+                            }
+
+                            if (travelCost != null) {
+                                Text(
+                                    "Coste del desplazamiento: ${currencyFormat.format(travelCost)}",
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
 
-                                if (
-                                    showSavingsComparison &&
-                                    comparisonReferenceCost != null &&
-                                    station.id != comparisonStationId
-                                ) {
-                                    val difference =
-                                        comparisonReferenceCost.subtract(totalCost)
+                                val totalCost = CostCalculator.totalCost(
+                                    refuelCost,
+                                    travelCost
+                                )
 
-                                    val comparisonText = when {
-                                        difference.signum() > 0 ->
-                                            "Ahorras ${currencyFormat.format(difference)} frente a la gasolinera más cercana."
-                                        difference.signum() < 0 ->
-                                            "Cuesta ${currencyFormat.format(difference.abs())} más que ir a la gasolinera más cercana."
-                                        else ->
-                                            "El coste es igual al de la gasolinera más cercana."
-                                    }
-
+                                if (totalCost != null) {
                                     Text(
-                                        comparisonText,
+                                        "Coste total: ${currencyFormat.format(totalCost)}",
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+
+                                    if (
+                                        showSavingsComparison &&
+                                        comparisonReferenceCost != null &&
+                                        station.id != comparisonStationId
+                                    ) {
+                                        val difference =
+                                            comparisonReferenceCost.subtract(totalCost)
+
+                                        val comparisonText = when {
+                                            difference.signum() > 0 ->
+                                                "Ahorras ${currencyFormat.format(difference)} frente a la gasolinera más cercana."
+                                            difference.signum() < 0 ->
+                                                "Cuesta ${currencyFormat.format(difference.abs())} más que ir a la gasolinera más cercana."
+                                            else ->
+                                                "El coste es igual al de la gasolinera más cercana."
+                                        }
+
+                                        Text(
+                                            comparisonText,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        "Introduce una cantidad de repostaje válida para calcular el coste total.",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
                             } else {
                                 Text(
-                                    "Introduce una cantidad de repostaje válida para calcular el coste total.",
+                                    "Introduce un consumo válido para calcular el coste del desplazamiento.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
-                        } else {
-                            Text(
-                                "Introduce un consumo válido para calcular el coste del desplazamiento.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
                         }
                     }
                 }

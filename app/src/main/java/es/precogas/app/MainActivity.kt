@@ -164,6 +164,7 @@ class MainActivity : ComponentActivity() {
                 }
 
             val requestLocation: () -> Unit = {
+                locationRequired = true
                 if (
                     locationRequired &&
                     locationStatus != DeviceLocationStatus.LOADING

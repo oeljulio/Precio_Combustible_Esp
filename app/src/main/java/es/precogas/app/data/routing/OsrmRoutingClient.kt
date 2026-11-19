@@ -54,51 +54,47 @@ class OsrmRoutingClient(
         val result = linkedMapOf<String, StationRoute>()
 
         validStations.chunked(MAX_DESTINATIONS_PER_REQUEST).forEach { batch ->
-            var response: Map<String, StationRoute>? = null
-            var attempt = 0
+            val outboundRoutes = requestWithRetry {
+                fetchBatch(originLatitude, originLongitude, batch)
+            }
 
-            while (attempt < MAX_ATTEMPTS && response == null) {
-                currentCoroutineContext().ensureActive()
-                attempt++
-
-                try {
-                    requestMutex.lock()
-                    try {
-                        if (lastRequestAtNanos != 0L) {
-                            val elapsed = (System.nanoTime() - lastRequestAtNanos) / 1_000_000L
-                            val waitMillis = MIN_REQUEST_INTERVAL_MS - elapsed
-                            if (waitMillis > 0) delay(waitMillis)
-                        }
-
-                        lastRequestAtNanos = System.nanoTime()
-                        response = fetchBatch(
-                            originLatitude,
-                            originLongitude,
-                            batch
-                        )
-                        currentCoroutineContext().ensureActive()
-                    } finally {
-                        requestMutex.unlock()
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    if (attempt == MAX_ATTEMPTS) {
-                        response = emptyMap()
-                    }
+            val returnRoutes = if (outboundRoutes != null) {
+                requestWithRetry {
+                    fetchBatch(
+                        originLatitude,
+                        originLongitude,
+                        batch,
+                        reverse = true
+                    )
                 }
+            } else {
+                null
             }
 
             batch.forEach { station ->
-                val route = response?.get(station.id)
+                val outbound = outboundRoutes?.get(station.id)
                     ?: estimatedRoute(
                         originLatitude,
                         originLongitude,
                         station
                     )
 
-                if (route != null) {
-                    result[station.id] = route
+                if (outbound != null) {
+                    val returning = if (outbound.isEstimated) {
+                        null
+                    } else {
+                        returnRoutes?.get(station.id)
+                    }
+
+                    result[station.id] = outbound.copy(
+                        returnDistanceMeters = returning?.distanceMeters,
+                        returnDurationSeconds = returning?.durationSeconds,
+                        outboundRequestFailed = outboundRoutes == null,
+                        returnRequestFailed =
+                            !outbound.isEstimated &&
+                                outboundRoutes != null &&
+                                returnRoutes == null
+                    )
                 }
             }
         }
@@ -106,10 +102,44 @@ class OsrmRoutingClient(
         result
     }
 
+    private suspend fun <T> requestWithRetry(
+        request: suspend () -> T
+    ): T? {
+        repeat(MAX_ATTEMPTS) { attempt ->
+            currentCoroutineContext().ensureActive()
+
+            try {
+                requestMutex.lock()
+                try {
+                    if (lastRequestAtNanos != 0L) {
+                        val elapsed =
+                            (System.nanoTime() - lastRequestAtNanos) / 1_000_000L
+                        val waitMillis = MIN_REQUEST_INTERVAL_MS - elapsed
+                        if (waitMillis > 0) delay(waitMillis)
+                    }
+
+                    lastRequestAtNanos = System.nanoTime()
+                    val response = request()
+                    currentCoroutineContext().ensureActive()
+                    return response
+                } finally {
+                    requestMutex.unlock()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (attempt == MAX_ATTEMPTS - 1) return null
+            }
+        }
+
+        return null
+    }
+
     private suspend fun fetchBatch(
         originLatitude: Double,
         originLongitude: Double,
-        stations: List<FuelStation>
+        stations: List<FuelStation>,
+        reverse: Boolean = false
     ): Map<String, StationRoute> = suspendCancellableCoroutine { continuation ->
         val activeConnection = AtomicReference<HttpURLConnection?>(null)
 
@@ -125,12 +155,23 @@ class OsrmRoutingClient(
                 }
             }.joinToString(";")
 
-            val destinations = stations.indices.joinToString(";") { (it + 1).toString() }
-            val url = URL(
-                "$BASE_URL$coordinates?sources=0" +
-                    "&destinations=$destinations" +
-                    "&annotations=distance,duration"
-            )
+            val sourceIndexes = stations.indices.joinToString(";") {
+                (it + 1).toString()
+            }
+            val url = if (reverse) {
+                URL(
+                    "$BASE_URL$coordinates?sources=$sourceIndexes" +
+                        "&destinations=0" +
+                        "&annotations=distance,duration"
+                )
+            } else {
+                val destinations = sourceIndexes
+                URL(
+                    "$BASE_URL$coordinates?sources=0" +
+                        "&destinations=$destinations" +
+                        "&annotations=distance,duration"
+                )
+            }
 
             val connection = connectionFactory(url).apply {
                 requestMethod = "GET"
@@ -164,18 +205,30 @@ class OsrmRoutingClient(
                 }
 
                 val distances = root.optJSONArray("distances")
-                    ?.optJSONArray(0)
                     ?: throw IOException("OSRM no devolvió las distancias.")
 
                 val durations = root.optJSONArray("durations")
-                    ?.optJSONArray(0)
 
                 buildMap {
                     stations.forEachIndexed { index, station ->
-                        val distance = distances.optDouble(index, Double.NaN)
+                        val distance = if (reverse) {
+                            distances.optJSONArray(index)
+                                ?.optDouble(0, Double.NaN) ?: Double.NaN
+                        } else {
+                            distances.optJSONArray(0)
+                                ?.optDouble(index, Double.NaN) ?: Double.NaN
+                        }
+
                         if (distance.isFinite() && distance >= 0.0) {
-                            val duration = durations
-                                ?.optDouble(index, Double.NaN)
+                            val durationValue = if (reverse) {
+                                durations?.optJSONArray(index)
+                                    ?.optDouble(0, Double.NaN)
+                            } else {
+                                durations?.optJSONArray(0)
+                                    ?.optDouble(index, Double.NaN)
+                            }
+
+                            val duration = durationValue
                                 ?.takeIf { it.isFinite() && it >= 0.0 }
 
                             put(

@@ -86,6 +86,82 @@ class OsrmRoutingClientTest {
     }
 
     @Test
+    fun calculatesAsymmetricRoundTripFromBothOsrmDirections() = runBlocking {
+        val client = OsrmRoutingClient { url ->
+            val reverse = url.query?.contains("sources=1") == true
+            val body = if (reverse) {
+                """{"code":"Ok","distances":[[1450.0]],"durations":[[100.0]]}"""
+            } else {
+                """{"code":"Ok","distances":[[1234.5]],"durations":[[90.0]]}"""
+            }
+            FakeConnection(url, body = body)
+        }
+
+        val routes = client.fetchRoutes(40.0, -3.0, listOf(station()))
+        val route = routes["station-1"]
+
+        assertTrue(route != null)
+        assertEquals(1234.5, route!!.distanceMeters, 0.001)
+        assertEquals(90.0, route.durationSeconds!!, 0.001)
+        assertEquals(1450.0, route.returnDistanceMeters!!, 0.001)
+        assertEquals(100.0, route.returnDurationSeconds!!, 0.001)
+        assertEquals(2684.5, route.roundTripDistanceMeters!!, 0.001)
+        assertEquals(2.6845, route.roundTripDistanceKm!!, 0.000001)
+        assertEquals(190.0, route.roundTripDurationSeconds!!, 0.001)
+        assertFalse(route.outboundRequestFailed)
+        assertFalse(route.returnRequestFailed)
+    }
+
+    @Test
+    fun keepsReturnDistanceWhenReturnDurationIsMissing() = runBlocking {
+        val client = OsrmRoutingClient { url ->
+            val reverse = url.query?.contains("sources=1") == true
+            val body = if (reverse) {
+                """{"code":"Ok","distances":[[1450.0]]}"""
+            } else {
+                """{"code":"Ok","distances":[[1234.5]],"durations":[[90.0]]}"""
+            }
+            FakeConnection(url, body = body)
+        }
+
+        val routes = client.fetchRoutes(40.0, -3.0, listOf(station()))
+        val route = routes["station-1"]
+
+        assertTrue(route != null)
+        assertEquals(2684.5, route!!.roundTripDistanceMeters!!, 0.001)
+        assertNull(route.returnDurationSeconds)
+        assertNull(route.roundTripDurationSeconds)
+    }
+
+    @Test
+    fun keepsOutboundRouteWhenReturnRequestFails() = runBlocking {
+        val calls = AtomicInteger()
+        val client = OsrmRoutingClient { url ->
+            calls.incrementAndGet()
+            if (url.query?.contains("sources=1") == true) {
+                FakeConnection(url, status = 503)
+            } else {
+                FakeConnection(url)
+            }
+        }
+
+        val routes = client.fetchRoutes(40.0, -3.0, listOf(station()))
+        val route = routes["station-1"]
+
+        assertEquals(4, calls.get())
+        assertTrue(route != null)
+        assertEquals(1234.5, route!!.distanceMeters, 0.001)
+        assertEquals(90.0, route.durationSeconds!!, 0.001)
+        assertNull(route.returnDistanceMeters)
+        assertNull(route.returnDurationSeconds)
+        assertNull(route.roundTripDistanceMeters)
+        assertNull(route.roundTripDurationSeconds)
+        assertFalse(route.isEstimated)
+        assertFalse(route.outboundRequestFailed)
+        assertTrue(route.returnRequestFailed)
+    }
+
+    @Test
     fun retriesHttpErrorsAndUsesEstimatedRoute() = runBlocking {
         val calls = AtomicInteger()
         val client = OsrmRoutingClient { url ->
@@ -104,6 +180,8 @@ class OsrmRoutingClientTest {
         assertEquals(straightDistance * 1300.0, route!!.distanceMeters, 0.01)
         assertTrue(route.isEstimated)
         assertNull(route.durationSeconds)
+        assertTrue(route.outboundRequestFailed)
+        assertFalse(route.returnRequestFailed)
     }
 
     @Test
@@ -118,6 +196,8 @@ class OsrmRoutingClientTest {
 
         assertEquals(3, calls.get())
         assertTrue(routes["station-1"]?.isEstimated == true)
+        assertTrue(routes["station-1"]?.outboundRequestFailed == true)
+        assertFalse(routes["station-1"]?.returnRequestFailed == true)
     }
 
     @Test

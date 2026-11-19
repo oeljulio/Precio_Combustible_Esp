@@ -121,10 +121,15 @@ class FuelViewModel(
         activeRouteKey = key
 
         val cached = routeCache[key]
-        if (cached != null) {
+        if (cached != null && cached.values.none { route ->
+                route.outboundRequestFailed || route.returnRequestFailed
+            }
+        ) {
             _routeState.value = RouteUiState(routes = cached)
             routeJob = null
             return
+        } else if (cached != null) {
+            routeCache.remove(key)
         }
 
         _routeState.value = RouteUiState(isLoading = true)
@@ -137,9 +142,14 @@ class FuelViewModel(
                 )
 
                 if (activeRouteKey == key) {
-                    routeCache[key] = routes
-                    while (routeCache.size > 3) {
-                        routeCache.remove(routeCache.keys.first())
+                    if (routes.values.none { route ->
+                            route.outboundRequestFailed || route.returnRequestFailed
+                        }
+                    ) {
+                        routeCache[key] = routes
+                        while (routeCache.size > 3) {
+                            routeCache.remove(routeCache.keys.first())
+                        }
                     }
                     _routeState.value = RouteUiState(routes = routes)
                 }
