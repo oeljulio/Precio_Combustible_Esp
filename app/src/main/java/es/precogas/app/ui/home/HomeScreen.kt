@@ -915,7 +915,6 @@ fun PreCoGasHomeScreen(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            }
         }
 
         if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.isLoading) {
