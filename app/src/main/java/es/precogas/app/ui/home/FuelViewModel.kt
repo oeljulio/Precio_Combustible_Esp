@@ -39,6 +39,7 @@ class FuelViewModel(
 ) : ViewModel() {
     private var routeJob: Job? = null
     private var activeRouteKey: String? = null
+    private val failedRouteTracker = FailedRouteTracker()
     private val routeCache = linkedMapOf<String, Map<String, StationRoute>>()
     private val _routeState = MutableStateFlow(RouteUiState())
     val routeState: StateFlow<RouteUiState> = _routeState.asStateFlow()
@@ -117,7 +118,20 @@ class FuelViewModel(
 
         if (key == activeRouteKey) return
 
+        // El contexto solicitado cambió: cancelar cualquier petición anterior.
         routeJob?.cancel()
+        routeJob = null
+        activeRouteKey = null
+
+        // Una petición idéntica que ya falló no se repite automáticamente al
+        // recomponer, abrir/cerrar Ajustes o rotar. El reintento explícito de la
+        // interfaz llama antes a clearRoutes().
+        val failedError = failedRouteTracker.errorFor(key)
+        if (failedError != null) {
+            _routeState.value = RouteUiState(error = failedError)
+            return
+        }
+
         activeRouteKey = key
 
         val cached = routeCache[key]
@@ -142,6 +156,7 @@ class FuelViewModel(
                 )
 
                 if (activeRouteKey == key) {
+                    failedRouteTracker.clear()
                     if (routes.values.none { route ->
                             route.outboundRequestFailed || route.returnRequestFailed
                         }
@@ -157,11 +172,11 @@ class FuelViewModel(
                 throw error
             } catch (error: Exception) {
                 if (activeRouteKey == key) {
+                    val message = error.message?.takeIf { it.isNotBlank() }
+                        ?: "No se pudieron calcular las rutas."
                     activeRouteKey = null
-                    _routeState.value = RouteUiState(
-                        error = error.message?.takeIf { it.isNotBlank() }
-                            ?: "No se pudieron calcular las rutas."
-                    )
+                    failedRouteTracker.recordFailure(key, message)
+                    _routeState.value = RouteUiState(error = message)
                 }
             }
         }
@@ -171,6 +186,7 @@ class FuelViewModel(
         routeJob?.cancel()
         routeJob = null
         activeRouteKey = null
+        failedRouteTracker.clear()
         _routeState.value = RouteUiState()
     }
 

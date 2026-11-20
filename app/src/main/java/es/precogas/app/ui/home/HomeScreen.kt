@@ -2,13 +2,17 @@ package es.precogas.app.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,125 +75,129 @@ fun InitialSetupScreen(
     val consumptionValid = CostCalculator.parsePositive(consumption) != null
     val canProceed = selectedProvince != null && selectedProduct != null && consumptionValid
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            "PreCoGas",
-            style = MaterialTheme.typography.headlineLarge
-        )
-        Text(
-            "Encuentra. Compara. Ahorra.",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Card(
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 24.dp)
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = maxHeight)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Text(
+                "PreCoGas",
+                style = MaterialTheme.typography.headlineLarge
+            )
+            Text(
+                "Encuentra. Compara. Ahorra.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp)
             ) {
-                Text(
-                    "Configuración inicial",
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    "Elige tu provincia, combustible habitual, consumo del vehículo y radio de búsqueda."
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Provincia", style = MaterialTheme.typography.labelLarge)
-                    Box {
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { provinceMenuExpanded = true }
-                        ) {
-                            Text(selectedProvince?.name ?: "Elegir provincia")
-                        }
-
-                        DropdownMenu(
-                            expanded = provinceMenuExpanded,
-                            onDismissRequest = { provinceMenuExpanded = false }
-                        ) {
-                            ProvinceCatalog.all.forEach { province ->
-                                DropdownMenuItem(
-                                    text = { Text(province.name) },
-                                    onClick = {
-                                        selectedProvince = province
-                                        provinceMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Combustible habitual", style = MaterialTheme.typography.labelLarge)
-                    Box {
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { fuelMenuExpanded = true }
-                        ) {
-                            Text(selectedProduct?.displayName ?: "Selecciona un combustible")
-                        }
-
-                        DropdownMenu(
-                            expanded = fuelMenuExpanded,
-                            onDismissRequest = { fuelMenuExpanded = false }
-                        ) {
-                            standardProducts.forEach { product ->
-                                DropdownMenuItem(
-                                    text = { Text(product.displayName) },
-                                    onClick = {
-                                        selectedProduct = product
-                                        fuelMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val unitLabel = if (selectedProduct?.priceUnit == "€/kg") "kg/100 km" else "L/100 km"
-                    PersistentNumericTextField(
-                        value = consumption,
-                        label = "Consumo del vehículo ($unitLabel)",
-                        onValueChange = { consumption = it }
-                    )
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Radio de búsqueda", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(25, 50, 100).forEach { radius ->
-                            FilterChip(
-                                selected = searchRadiusKm == radius,
-                                onClick = { searchRadiusKm = radius },
-                                label = { Text("$radius km") }
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = canProceed,
-                    onClick = {
-                        val prov = selectedProvince ?: return@Button
-                        val prod = selectedProduct ?: return@Button
-                        onSetupComplete(prov, prod, consumption, searchRadiusKm)
-                    }
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Comenzar")
+                    Text(
+                        "Configuración inicial",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(
+                        "Elige tu provincia, combustible habitual, consumo del vehículo y radio de búsqueda."
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Provincia", style = MaterialTheme.typography.labelLarge)
+                        Box {
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { provinceMenuExpanded = true }
+                            ) {
+                                Text(selectedProvince?.name ?: "Elegir provincia")
+                            }
+
+                            DropdownMenu(
+                                expanded = provinceMenuExpanded,
+                                onDismissRequest = { provinceMenuExpanded = false }
+                            ) {
+                                ProvinceCatalog.all.forEach { province ->
+                                    DropdownMenuItem(
+                                        text = { Text(province.name) },
+                                        onClick = {
+                                            selectedProvince = province
+                                            provinceMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Combustible habitual", style = MaterialTheme.typography.labelLarge)
+                        Box {
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { fuelMenuExpanded = true }
+                            ) {
+                                Text(selectedProduct?.displayName ?: "Selecciona un combustible")
+                            }
+
+                            DropdownMenu(
+                                expanded = fuelMenuExpanded,
+                                onDismissRequest = { fuelMenuExpanded = false }
+                            ) {
+                                standardProducts.forEach { product ->
+                                    DropdownMenuItem(
+                                        text = { Text(product.displayName) },
+                                        onClick = {
+                                            selectedProduct = product
+                                            fuelMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val unitLabel = if (selectedProduct?.priceUnit == "€/kg") "kg/100 km" else "L/100 km"
+                        PersistentNumericTextField(
+                            value = consumption,
+                            label = "Consumo del vehículo ($unitLabel)",
+                            onValueChange = { consumption = it }
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Radio de búsqueda", style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(25, 50, 100).forEach { radius ->
+                                FilterChip(
+                                    selected = searchRadiusKm == radius,
+                                    onClick = { searchRadiusKm = radius },
+                                    label = { Text("$radius km") }
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = canProceed,
+                        onClick = {
+                            val prov = selectedProvince ?: return@Button
+                            val prod = selectedProduct ?: return@Button
+                            onSetupComplete(prov, prod, consumption, searchRadiusKm)
+                        }
+                    ) {
+                        Text("Comenzar")
+                    }
                 }
             }
         }
@@ -444,6 +453,8 @@ fun PreCoGasHomeScreen(
     onCalculateRoutes: (Double, Double, List<FuelStation>) -> Unit,
     onClearRoutes: () -> Unit,
     onRequestLocation: () -> Unit,
+    onRestoreLocation: () -> Unit,
+    onLocationNoLongerRequired: () -> Unit,
     onSearchRadiusChange: (Int) -> Unit,
     onVehicleConsumptionChange: (String) -> Unit,
     onRefuelLitersChange: (String) -> Unit,
@@ -452,7 +463,10 @@ fun PreCoGasHomeScreen(
     onSelectedFuelProductChange: (String?) -> Unit,
     onCostModeChange: (CostMode) -> Unit
 ) {
-    var showSettings by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var sortOrder by rememberSaveable {
+        mutableStateOf(defaultSortOrder(costMode))
+    }
 
     if (showSettings) {
         SettingsScreen(
@@ -479,8 +493,12 @@ fun PreCoGasHomeScreen(
     var provinceMenuExpanded by remember { mutableStateOf(false) }
     var fuelMenuExpanded by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
-    var sortOrder by remember { mutableStateOf(StationSortOrder.PRICE) }
     var routeRetryToken by remember { mutableStateOf(0) }
+    val effectiveSortOrder = if (sortOrder.isValidFor(costMode)) {
+        sortOrder
+    } else {
+        defaultSortOrder(costMode)
+    }
     val selectedProduct = selectedFuelProduct?.let { FuelProduct.fromApiKey(it) }
     val selectedProductAvailable =
         selectedProduct != null && uiState.availableProducts.contains(selectedProduct)
@@ -521,7 +539,26 @@ fun PreCoGasHomeScreen(
 
     val routeRequestsRelevant =
         costMode != CostMode.REFUEL_ONLY ||
-            sortOrder == StationSortOrder.DISTANCE
+            effectiveSortOrder == StationSortOrder.DISTANCE
+
+    val locationControlsVisible = routeRequestsRelevant
+
+    LaunchedEffect(
+        costMode,
+        effectiveSortOrder,
+        originLatitude,
+        originLongitude,
+        locationStatus
+    ) {
+        if (
+            costMode == CostMode.REFUEL_ONLY &&
+            effectiveSortOrder == StationSortOrder.DISTANCE &&
+            (originLatitude == null || originLongitude == null) &&
+            locationStatus == DeviceLocationStatus.NOT_REQUESTED
+        ) {
+            onRestoreLocation()
+        }
+    }
 
     val routeRetryAvailable =
         routeRequestsRelevant &&
@@ -534,16 +571,8 @@ fun PreCoGasHomeScreen(
                     )
             }
 
-    LaunchedEffect(costMode) {
-        sortOrder = if (costMode == CostMode.REFUEL_ONLY) {
-            StationSortOrder.PRICE
-        } else {
-            StationSortOrder.TOTAL_COST
-        }
-    }
-
     val comparisonStation = if (
-        sortOrder == StationSortOrder.TOTAL_COST &&
+        effectiveSortOrder == StationSortOrder.TOTAL_COST &&
         routeSortingAvailable &&
         !routeState.isLoading
     ) {
@@ -574,7 +603,7 @@ fun PreCoGasHomeScreen(
     val sortedStations = if (selectedProduct == null) {
         emptyList()
     } else {
-        when (sortOrder) {
+        when (effectiveSortOrder) {
             StationSortOrder.PRICE -> matchingStations.sortedWith(
                 compareBy<FuelStation> {
                     it.priceFor(selectedProduct) ?: Int.MAX_VALUE
@@ -631,12 +660,12 @@ fun PreCoGasHomeScreen(
         originLatitude,
         originLongitude,
         matchingStations,
-        sortOrder,
+        effectiveSortOrder,
         routeRetryToken
     ) {
         val routesNeeded =
             costMode != CostMode.REFUEL_ONLY ||
-            sortOrder == StationSortOrder.DISTANCE
+            effectiveSortOrder == StationSortOrder.DISTANCE
 
         if (
             routesNeeded &&
@@ -790,27 +819,53 @@ fun PreCoGasHomeScreen(
                         }
                     }
 
-                    if (costMode != CostMode.REFUEL_ONLY) {
+                    if (locationControlsVisible) {
+                        val locationOnlyForDistance =
+                            costMode == CostMode.REFUEL_ONLY
+
                         Text(
-                            "La ubicación permite filtrar las estaciones por el radio " +
-                                "seleccionado ($searchRadiusKm km en línea recta).",
+                            if (locationOnlyForDistance) {
+                                "La ubicación permite ordenar las estaciones por distancia " +
+                                    "por carretera."
+                            } else {
+                                "La ubicación permite filtrar las estaciones por el radio " +
+                                    "seleccionado ($searchRadiusKm km en línea recta)."
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
 
                         when (locationStatus) {
                             DeviceLocationStatus.NOT_REQUESTED ->
-                                Text("Comparte tu ubicación para buscar estaciones cercanas.")
+                                Text(
+                                    if (locationOnlyForDistance) {
+                                        "Comparte tu ubicación para ordenar por distancia " +
+                                            "por carretera."
+                                    } else {
+                                        "Comparte tu ubicación para buscar estaciones cercanas."
+                                    }
+                                )
 
                             DeviceLocationStatus.LOADING ->
                                 Text("Obteniendo ubicación del dispositivo…")
 
                             DeviceLocationStatus.READY ->
-                                Text("Ubicación obtenida. Aplicando el radio de búsqueda.")
+                                Text(
+                                    if (locationOnlyForDistance) {
+                                        "Ubicación obtenida. Calculando distancias por carretera."
+                                    } else {
+                                        "Ubicación obtenida. Aplicando el radio de búsqueda."
+                                    }
+                                )
 
                             DeviceLocationStatus.DENIED ->
                                 Text(
-                                    "No se ha concedido permiso de ubicación. Puedes seguir " +
-                                        "consultando precios y utilizar Solo repostaje.",
+                                    if (locationOnlyForDistance) {
+                                        "No se ha concedido permiso de ubicación. Puedes " +
+                                            "ordenar por precio o volver a intentarlo."
+                                    } else {
+                                        "No se ha concedido permiso de ubicación. Puedes seguir " +
+                                            "consultando precios y utilizar Solo repostaje."
+                                    },
                                     color = MaterialTheme.colorScheme.error
                                 )
 
@@ -872,6 +927,7 @@ fun PreCoGasHomeScreen(
                                 onClick = {
                                     sortOrder = StationSortOrder.PRICE
                                     sortMenuExpanded = false
+                                    onLocationNoLongerRequired()
                                 }
                             )
                             DropdownMenuItem(
@@ -905,11 +961,11 @@ fun PreCoGasHomeScreen(
             }
 
             Text(
-                "Orden actual: ${sortOrder.label}",
+                "Orden actual: ${effectiveSortOrder.label}",
                 style = MaterialTheme.typography.bodySmall
             )
 
-            if (sortOrder == StationSortOrder.DISTANCE && !routeSortingAvailable) {
+            if (effectiveSortOrder == StationSortOrder.DISTANCE && !routeSortingAvailable) {
                 Text(
                     "La ordenación por carretera requiere compartir tu ubicación y calcular la ruta.",
                     style = MaterialTheme.typography.bodySmall
@@ -917,7 +973,7 @@ fun PreCoGasHomeScreen(
             }
         }
 
-        if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.isLoading) {
+        if ((costMode != CostMode.REFUEL_ONLY || effectiveSortOrder == StationSortOrder.DISTANCE) && routeState.isLoading) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator()
@@ -925,7 +981,7 @@ fun PreCoGasHomeScreen(
                 }
             }
         }
-        if ((costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) && routeState.error != null) {
+        if ((costMode != CostMode.REFUEL_ONLY || effectiveSortOrder == StationSortOrder.DISTANCE) && routeState.error != null) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -974,7 +1030,7 @@ fun PreCoGasHomeScreen(
             }
 
             (costMode != CostMode.REFUEL_ONLY ||
-                sortOrder == StationSortOrder.DISTANCE) && !hasValidOrigin -> {
+                effectiveSortOrder == StationSortOrder.DISTANCE) && !hasValidOrigin -> {
                 item {
                     Text(
                         if (costMode == CostMode.REFUEL_ONLY) {
@@ -1002,8 +1058,8 @@ fun PreCoGasHomeScreen(
                         vehicleConsumption = vehicleConsumptionForProduct,
                         costMode = costMode,
                         route = routeState.routes[station.id],
-                        showSavingsComparison = sortOrder == StationSortOrder.TOTAL_COST,
-                        showRouteDistance = costMode == CostMode.REFUEL_ONLY && sortOrder == StationSortOrder.DISTANCE,
+                        showSavingsComparison = effectiveSortOrder == StationSortOrder.TOTAL_COST,
+                        showRouteDistance = costMode == CostMode.REFUEL_ONLY && effectiveSortOrder == StationSortOrder.DISTANCE,
                         comparisonStationId = comparisonStation?.id,
                         comparisonReferenceCost = comparisonReferenceCost
                     )
@@ -1011,7 +1067,7 @@ fun PreCoGasHomeScreen(
             }
         }
 
-        if (costMode != CostMode.REFUEL_ONLY || sortOrder == StationSortOrder.DISTANCE) {
+        if (costMode != CostMode.REFUEL_ONLY || effectiveSortOrder == StationSortOrder.DISTANCE) {
             item {
                 Text(
                     "Rutas: © OpenStreetMap contributors · OSRM",
@@ -1028,6 +1084,20 @@ private enum class StationSortOrder(val label: String) {
     TOTAL_COST("Coste total más bajo"),
     TRAVEL_TIME("Tiempo de viaje")
 }
+
+private fun defaultSortOrder(costMode: CostMode): StationSortOrder =
+    if (costMode == CostMode.REFUEL_ONLY) {
+        StationSortOrder.PRICE
+    } else {
+        StationSortOrder.TOTAL_COST
+    }
+
+private fun StationSortOrder.isValidFor(costMode: CostMode): Boolean =
+    if (costMode == CostMode.REFUEL_ONLY) {
+        this == StationSortOrder.PRICE || this == StationSortOrder.DISTANCE
+    } else {
+        this == StationSortOrder.TOTAL_COST || this == StationSortOrder.TRAVEL_TIME
+    }
 
 private fun stationTotalCost(
     station: FuelStation,

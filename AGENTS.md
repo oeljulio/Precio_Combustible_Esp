@@ -19,7 +19,7 @@ Prioridad: Android nativo, conservando todas las funcionalidades de la web y PWA
 - Proyectos: ~/proyectos/.
 - Proyecto: ~/proyectos/PrecioCombustible/.
 - Carpetas compartidas: ~/Android/Download y ~/Android/Documents.
-- Herramientas: Python 3, Bash, Git y Google Antigravity CLI (agy).
+- Herramientas: Python 3, Bash, Git, Java 17 Temurin, Gradle Wrapper 9.5.0 y Google Antigravity CLI (agy).
 
 Restricciones:
 - No utilizar Termux, QEMU ni máquinas virtuales.
@@ -163,6 +163,8 @@ No mostrar criterios incompatibles.
 
 Revisar criterio inicial, cambios, ordenación, actualización e invalidación de resultados obsoletos.
 
+La ordenación debe conservarse al abrir y cerrar Ajustes y al rotar o recrear la Activity. Calcular un criterio efectivo a partir del modo actual y aplicarlo de forma coherente a la ordenación, al texto «Orden actual», al menú y a la necesidad de calcular rutas. Al cambiar de modo, adaptar solo los criterios incompatibles: en Solo repostaje, Precio o Distancia por carretera (predeterminado Precio); en modos con desplazamiento, Coste total o Tiempo de viaje (predeterminado Coste total). No reiniciar la ordenación de forma incondicional ni perder las rutas por abrir o cerrar Ajustes.
+
 ### 6.6. Rutas OSRM
 
 Inspeccionar especialmente:
@@ -184,6 +186,15 @@ Requisitos:
 
 Revisar especialmente activeRouteKey después de errores para evitar que bloquee solicitudes idénticas posteriores (debe restablecerse a null ante excepciones en FuelViewModel y proveer acción de reintento en HomeScreen).
 
+Una petición de rutas idéntica que ya falló no debe reintentarse automáticamente al recomponer, abrir o cerrar Ajustes ni al rotar. El reintento debe ser explícito; los cambios de origen, estaciones o provincia pueden iniciar una petición nueva.
+
+Gestión del registro de fallos:
+- Una clave fallida debe bloquear únicamente los reintentos automáticos de esa misma clave.
+- Al solicitar una clave distinta, invalidar el registro del fallo anterior antes de continuar con la nueva solicitud.
+- Volver a una clave anteriormente fallida después de un cambio real de contexto debe permitir un nuevo cálculo.
+- El reintento explícito debe seguir liberando el bloqueo.
+- Conservar la deduplicación de solicitudes activas y la caché de resultados válidos.
+
 Utilizar estimaciones únicamente cuando falle OSRM.
 
 Identificar claramente los resultados estimados y no presentarlos como rutas reales.
@@ -201,6 +212,11 @@ Revisar DeviceLocationProvider y MainActivity.
 - Evitar condiciones de carrera.
 - Evitar listeners innecesarios.
 - Evitar que respuestas antiguas alteren el estado actual.
+- Conservar la ubicación y el estado del permiso con el estado guardable de Compose (`rememberSaveable`), nunca en DataStore.
+- Tras rotar o tras la muerte del proceso, recuperar la ubicación automáticamente solo si el modo la requiere y el permiso ya está concedido; la recuperación automática no debe abrir el diálogo de permisos.
+- Mantener la protección por generaciones: aceptar una concesión legítima aunque la generación se haya perdido por una recreación, pero impedir que una respuesta antigua reactive una solicitud incompatible con el modo actual.
+- No invalidar incondicionalmente una ubicación restaurada en la primera composición de Solo repostaje; puede seguir siendo necesaria para la ordenación por distancia.
+- En Solo repostaje, ofrecer la solicitud de ubicación cuando la ordenación efectiva sea Distancia por carretera y no haya un origen válido.
 
 ### 6.8. Interfaz
 
@@ -230,6 +246,10 @@ Distinguir los estados vacíos según la modalidad.
 Identificar si las estimaciones corresponden a ida o ida y vuelta.
 
 Al cambiar de provincia invalidar rutas que ya no sean válidas.
+
+- Mantener un único propietario de insets en `MainActivity`: `enableEdgeToEdge()` y un contenedor raíz con `safeDrawingPadding()`, que incluye barras del sistema, recortes y teclado. No añadir `imePadding`, `statusBarsPadding` ni `navigationBarsPadding` en pantallas o componentes hijos. Declarar `android:windowSoftInputMode="adjustResize"` en `MainActivity` para que el teclado ajuste el área disponible en API 26-29.
+- Usar un `Surface` raíz con `MaterialTheme.colorScheme.background` para que el fondo y el color de contenido sigan el tema, y ajustar la apariencia de las barras del sistema según `ThemeMode` (claro, oscuro y AMOLED).
+- Las pantallas con formularios deben poder desplazarse cuando el teclado reduce el espacio disponible; comprobar que la acción principal sigue siendo accesible con el teclado abierto.
 
 ## 7. MITECO
 
@@ -308,12 +328,20 @@ Prestar especial atención a:
 - Tiempo de viaje.
 - Respuestas OSRM.
 - Errores y reintentos.
+- Bloqueo de reintentos automáticos para claves OSRM idénticas que ya fallaron.
+- Invalidación del fallo al cambiar de clave y recuperación al volver a una clave anterior.
+- Cancelación de una clave nueva sin mantener bloqueada una clave fallida anterior.
+- Reintento explícito de rutas fallidas.
+- Deduplicación de solicitudes activas y conservación de caché válida.
 - Cancelación.
 - Caché.
 - Cambio de provincia.
 - Permisos.
 - Persistencia.
 - Estados de interfaz.
+- Insets, teclado y barras del sistema en API 26-29 y 35+.
+- Restauración de ubicación y permisos tras rotación y muerte del proceso.
+- Conservación de la ordenación al abrir o cerrar Ajustes y al rotar.
 
 No eliminar pruebas para conseguir que pasen.
 
@@ -330,6 +358,13 @@ Inspeccionar:
 - .github/workflows/.
 
 Comprobar Gradle, Android Gradle Plugin, Kotlin, Compose, JDK, compileSdk, targetSdk, minSdk, SDK y Build Tools.
+
+Gradle Wrapper:
+- Utilizar `./gradlew` como punto de entrada único para ejecutar Gradle, tanto en Debian como en CI.
+- La versión fijada es Gradle 9.5.0. Mantener `distributionSha256Sum` para verificar la distribución descargada.
+- Mantener versionados `gradlew`, `gradle/wrapper/gradle-wrapper.jar` y `gradle/wrapper/gradle-wrapper.properties`.
+- GitHub Actions debe ejecutar los tests unitarios, los tests instrumentados de Room y `assembleDebug` mediante `./gradlew`.
+- En Debian ARM64/PRoot, limitar las pruebas a tareas compatibles y verificables en ese entorno. No asumir que el SDK, el emulador o las herramientas nativas x86_64 funcionan en ARM64.
 
 Los builds Android completos se realizan exclusivamente mediante GitHub Actions.
 
