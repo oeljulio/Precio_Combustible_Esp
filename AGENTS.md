@@ -184,7 +184,7 @@ Requisitos:
 - Gestionar cancelaciones, concurrencia, caché, caducidad y errores HTTP.
 - Gestionar tiempos de espera, reintentos y conectividad.
 
-Revisar especialmente activeRouteKey después de errores para evitar que bloquee solicitudes idénticas posteriores (debe restablecerse a null ante excepciones en FuelViewModel y proveer acción de reintento en HomeScreen).
+En FuelViewModel, conservar activeRouteKey mientras el contexto actual tenga una solicitud activa o resultados válidos, incluidos los recuperados de la caché, para deduplicar recomposiciones. Al cambiar el contexto, cancelar la solicitud anterior y actualizar la clave. Si la solicitud falla, poner activeRouteKey a null y registrar la clave y el error en FailedRouteTracker para bloquear reintentos automáticos idénticos. El reintento explícito desde HomeScreen debe limpiar ambos estados mediante clearRoutes().
 
 Una petición de rutas idéntica que ya falló no debe reintentarse automáticamente al recomponer, abrir o cerrar Ajustes ni al rotar. El reintento debe ser explícito; los cambios de origen, estaciones o provincia pueden iniciar una petición nueva.
 
@@ -212,7 +212,7 @@ Revisar DeviceLocationProvider y MainActivity.
 - Evitar condiciones de carrera.
 - Evitar listeners innecesarios.
 - Evitar que respuestas antiguas alteren el estado actual.
-- Conservar la ubicación y el estado del permiso con el estado guardable de Compose (`rememberSaveable`), nunca en DataStore.
+- Conservar las coordenadas de origen y el estado del proceso de ubicación mediante `rememberSaveable`, nunca en DataStore. El permiso no debe tratarse como un estado persistido: comprobar siempre su concesión directamente en Android antes de recuperar la ubicación o iniciar una solicitud.
 - Tras rotar o tras la muerte del proceso, recuperar la ubicación automáticamente solo si el modo la requiere y el permiso ya está concedido; la recuperación automática no debe abrir el diálogo de permisos.
 - Mantener la protección por generaciones: aceptar una concesión legítima aunque la generación se haya perdido por una recreación, pero impedir que una respuesta antigua reactive una solicitud incompatible con el modo actual.
 - No invalidar incondicionalmente una ubicación restaurada en la primera composición de Solo repostaje; puede seguir siendo necesaria para la ordenación por distancia.

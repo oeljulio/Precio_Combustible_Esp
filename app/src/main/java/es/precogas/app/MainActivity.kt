@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
             val vehicleConsumptionKg by themePreferences.vehicleConsumptionKg.collectAsState(initial = "")
             val refuelKg by themePreferences.refuelKg.collectAsState(initial = "")
             val selectedFuelProduct by themePreferences.selectedFuelProduct.collectAsState(initial = null)
+            val includeRestrictedStations by themePreferences.includeRestrictedStations.collectAsState(initial = false)
             val costMode by themePreferences.costMode.collectAsState(initial = CostMode.REFUEL_ONLY)
             val coroutineScope = rememberCoroutineScope()
             val locationProvider = remember {
@@ -101,6 +102,9 @@ class MainActivity : ComponentActivity() {
             var permissionRequestGeneration by remember { mutableStateOf<Long?>(null) }
             var locationRequired by remember {
                 mutableStateOf(costMode != CostMode.REFUEL_ONLY)
+            }
+            var initialLocationPromptRequested by rememberSaveable {
+                mutableStateOf(false)
             }
             var lastAppliedCostMode by remember { mutableStateOf<CostMode?>(null) }
 
@@ -303,7 +307,11 @@ class MainActivity : ComponentActivity() {
 
                             province == null -> {
                                 InitialSetupScreen(
-                                    onSetupComplete = { selectedProv, selectedProd, consumption, radius ->
+                                    onSetupComplete = { selectedProv, selectedProd, consumption, radius, includeRestricted ->
+                                        val shouldRequestInitialLocation = !initialLocationPromptRequested
+                                        if (shouldRequestInitialLocation) {
+                                            initialLocationPromptRequested = true
+                                        }
                                         coroutineScope.launch {
                                             themePreferences.setProvinceId(selectedProv.id)
                                             themePreferences.setSelectedFuelProduct(selectedProd.apiKey)
@@ -313,6 +321,10 @@ class MainActivity : ComponentActivity() {
                                                 themePreferences.setVehicleConsumption(consumption)
                                             }
                                             themePreferences.setSearchRadiusKm(radius)
+                                            themePreferences.setIncludeRestrictedStations(includeRestricted)
+                                            if (shouldRequestInitialLocation) {
+                                                requestLocation()
+                                            }
                                         }
                                     }
                                 )
@@ -391,6 +403,12 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onSearchRadiusChange = { value ->
                                         coroutineScope.launch { themePreferences.setSearchRadiusKm(value) }
+                                    },
+                                    includeRestrictedStations = includeRestrictedStations,
+                                    onIncludeRestrictedStationsChange = { value ->
+                                        coroutineScope.launch {
+                                            themePreferences.setIncludeRestrictedStations(value)
+                                        }
                                     },
                                     onVehicleConsumptionChange = { value ->
                                         coroutineScope.launch { themePreferences.setVehicleConsumption(value) }

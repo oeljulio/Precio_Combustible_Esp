@@ -51,6 +51,7 @@ private val refuelKgKey = stringPreferencesKey("refuel_kg")
 private val roundTripKey = booleanPreferencesKey("round_trip")
 private val costModeKey = stringPreferencesKey("cost_mode")
 private val selectedFuelProductKey = stringPreferencesKey("selected_fuel_product")
+private val includeRestrictedStationsKey = booleanPreferencesKey("include_restricted_stations")
 
 class ThemePreferences(context: Context) {
     private val dataStore = context.applicationContext.preCoGasDataStore
@@ -92,6 +93,10 @@ class ThemePreferences(context: Context) {
 
     val selectedFuelProduct: Flow<String?> = preferences.map { values ->
         values[selectedFuelProductKey]
+    }
+
+    val includeRestrictedStations: Flow<Boolean> = preferences.map { values ->
+        values[includeRestrictedStationsKey] ?: false
     }
 
     val costMode: Flow<CostMode> = preferences.map { values ->
@@ -158,6 +163,12 @@ class ThemePreferences(context: Context) {
             } else {
                 values[selectedFuelProductKey] = apiKey
             }
+        }
+    }
+
+    suspend fun setIncludeRestrictedStations(include: Boolean) {
+        dataStore.edit { values ->
+            values[includeRestrictedStationsKey] = include
         }
     }
 

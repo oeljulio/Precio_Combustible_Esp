@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,12 +59,13 @@ import java.util.Locale
 
 @Composable
 fun InitialSetupScreen(
-    onSetupComplete: (Province, FuelProduct, String, Int) -> Unit
+    onSetupComplete: (Province, FuelProduct, String, Int, Boolean) -> Unit
 ) {
     var selectedProvince by remember { mutableStateOf<Province?>(null) }
     var selectedProduct by remember { mutableStateOf<FuelProduct?>(null) }
     var consumption by remember { mutableStateOf("") }
     var searchRadiusKm by remember { mutableStateOf(25) }
+    var includeRestrictedStations by remember { mutableStateOf(false) }
 
     var provinceMenuExpanded by remember { mutableStateOf(false) }
     var fuelMenuExpanded by remember { mutableStateOf(false) }
@@ -187,13 +189,38 @@ fun InitialSetupScreen(
                         }
                     }
 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = includeRestrictedStations,
+                            onCheckedChange = { includeRestrictedStations = it }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Incluir estaciones de venta restringida")
+                            Text(
+                                "Son estaciones reservadas a socios o colectivos autorizados.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Text(
+                        "Al comenzar se solicitará permiso de ubicación mientras se usa la aplicación. "
+                            + "Puedes denegarlo y continuar; algunas funciones de distancia necesitarán ubicación.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = canProceed,
                         onClick = {
                             val prov = selectedProvince ?: return@Button
                             val prod = selectedProduct ?: return@Button
-                            onSetupComplete(prov, prod, consumption, searchRadiusKm)
+                             onSetupComplete(
+                                prov, prod, consumption, searchRadiusKm,
+                                includeRestrictedStations
+                            )
                         }
                     ) {
                         Text("Comenzar")
@@ -209,7 +236,7 @@ fun ProvinceSelectionScreen(
     onProvinceSelected: (Province) -> Unit
 ) {
     InitialSetupScreen(
-        onSetupComplete = { province, _, _, _ ->
+        onSetupComplete = { province, _, _, _, _ ->
             onProvinceSelected(province)
         }
     )
@@ -231,6 +258,8 @@ fun SettingsScreen(
     onVehicleConsumptionKgChange: (String) -> Unit,
     searchRadiusKm: Int,
     onSearchRadiusChange: (Int) -> Unit,
+    includeRestrictedStations: Boolean,
+    onIncludeRestrictedStationsChange: (Boolean) -> Unit,
     uiState: HomeUiState,
     onRefresh: () -> Unit
 ) {
@@ -375,6 +404,21 @@ fun SettingsScreen(
                             )
                         }
                     }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = includeRestrictedStations,
+                            onCheckedChange = onIncludeRestrictedStationsChange
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Incluir estaciones de venta restringida")
+                            Text(
+                                "Permite mostrar estaciones reservadas a socios o colectivos autorizados.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -461,7 +505,9 @@ fun PreCoGasHomeScreen(
     onVehicleConsumptionKgChange: (String) -> Unit,
     onRefuelKgChange: (String) -> Unit,
     onSelectedFuelProductChange: (String?) -> Unit,
-    onCostModeChange: (CostMode) -> Unit
+    onCostModeChange: (CostMode) -> Unit,
+    includeRestrictedStations: Boolean,
+    onIncludeRestrictedStationsChange: (Boolean) -> Unit
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var sortOrder by rememberSaveable {
@@ -484,6 +530,8 @@ fun PreCoGasHomeScreen(
             onVehicleConsumptionKgChange = onVehicleConsumptionKgChange,
             searchRadiusKm = searchRadiusKm,
             onSearchRadiusChange = onSearchRadiusChange,
+            includeRestrictedStations = includeRestrictedStations,
+            onIncludeRestrictedStationsChange = onIncludeRestrictedStationsChange,
             uiState = uiState,
             onRefresh = onRefresh
         )
@@ -505,9 +553,15 @@ fun PreCoGasHomeScreen(
     val refuelQuantity = if (selectedProduct?.priceUnit == "€/kg") refuelKg else refuelLiters
     val vehicleConsumptionForProduct =
         if (selectedProduct?.priceUnit == "€/kg") vehicleConsumptionKg else vehicleConsumption
+    val eligibleStations = if (includeRestrictedStations) {
+        uiState.stations
+    } else {
+        uiState.stations.filterNot { it.saleType == "R" }
+    }
+
     val fuelMatchingStations = selectedProduct
         ?.takeIf { selectedProductAvailable }
-        ?.let { product -> uiState.stations.filter { it.priceFor(product) != null } }
+        ?.let { product -> eligibleStations.filter { it.priceFor(product) != null } }
         ?: emptyList()
 
     val matchingStations = if (costMode == CostMode.REFUEL_ONLY) {
@@ -1157,6 +1211,13 @@ private fun StationCard(
                 station.brand.ifBlank { "Gasolinera" },
                 style = MaterialTheme.typography.titleMedium
             )
+            if (station.saleType == "R") {
+                Text(
+                    "Venta restringida",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
 
             Text(station.address)
 
